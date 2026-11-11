@@ -17,6 +17,7 @@ export const RETIRED_PROVIDER_CONNECTION_IDS: Readonly<Record<string, string>> =
 
 /** Preferred model for a new connection; pi's first listed model is used otherwise. */
 export const PI_PROVIDER_DEFAULT_MODELS: Readonly<Record<string, string>> = {
+  "claude-code": "claude-opus-5-5",
   "openai-codex": "gpt-5.6-sol",
   "opencode-go": "glm-5.2",
 };

@@ -158,6 +158,9 @@ export function SessionRow({
       }
     : null;
 
+  const copySessionId = () => {
+    void copyTextToClipboard(session.id);
+  };
   const pathActions = directory
     ? {
         onCopyPath: () => {
@@ -206,6 +209,7 @@ export function SessionRow({
           : undefined
       }
       onShare={onShare}
+      onCopyId={copySessionId}
       {...pathActions}
       onDelete={permissions.delete ? confirmAndDeleteSession : undefined}
     >
@@ -242,6 +246,7 @@ export function SessionRow({
                 permissions.manage ? () => startEditing(session.id, session.title || "") : undefined
               }
               onShare={onShare}
+              onCopyId={copySessionId}
               {...pathActions}
               onDelete={permissions.delete ? confirmAndDeleteSession : undefined}
             />

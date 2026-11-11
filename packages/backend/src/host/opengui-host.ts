@@ -14,6 +14,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  CLAUDE_CODE_PROVIDER_ID,
+  closeClaudeCodeSessions,
   combineAgentToolSources,
   createOpenGuiHarness,
   createPiModels,
@@ -561,6 +563,7 @@ export class OpenGuiHost {
         await this.#mcpBroker.close();
         this.#providerLogins.clear();
         this.#piAiTransport.close();
+        await closeClaudeCodeSessions();
       } finally {
         // Always release the durable state lock, or the next start finds it held.
         await this.#stateStore?.close();
@@ -731,23 +734,27 @@ export class OpenGuiHost {
     const scope = ownerId ?? "";
     let models = this.#piModels.get(scope);
     if (!models) {
-      models = createPiModels({
-        credentials: createHostCredentialStore({
-          ownerId,
-          current: () => this.#providerCredentials,
-          update: (change) =>
-            this.#updateState((state) => ({
-              ...state,
-              secrets: {
-                ...state.secrets,
-                providerCredentials: change(state.secrets.providerCredentials),
-              },
-            })).then(() => undefined),
-          lock: this.#credentialLock,
-        }),
-        // Personal credentials never fall back to the Host's environment or credential files.
-        authContext: ownerId ? ISOLATED_AUTH_CONTEXT : undefined,
-      });
+      models = createPiModels(
+        {
+          credentials: createHostCredentialStore({
+            ownerId,
+            current: () => this.#providerCredentials,
+            update: (change) =>
+              this.#updateState((state) => ({
+                ...state,
+                secrets: {
+                  ...state.secrets,
+                  providerCredentials: change(state.secrets.providerCredentials),
+                },
+              })).then(() => undefined),
+            lock: this.#credentialLock,
+          }),
+          // Personal credentials never fall back to the Host's environment or credential files.
+          authContext: ownerId ? ISOLATED_AUTH_CONTEXT : undefined,
+        },
+        // ...nor to sign-ins of the Host machine, such as its Claude Code login.
+        { personal: Boolean(ownerId) },
+      );
       this.#piModels.set(scope, models);
     }
     return models;
@@ -1743,6 +1750,8 @@ export class OpenGuiHost {
     await this.#piModelsFor(ownerId).logout(providerId);
     if (connectionId) await this.#forgetDefaultConnection(connectionId);
     this.#piAiTransport.close();
+    // Claude Code processes signed in with the removed credential stop now, not when idle.
+    if (providerId === CLAUDE_CODE_PROVIDER_ID) await closeClaudeCodeSessions();
     if (providerId === "openai-codex" && credential?.type === "oauth") {
       await revokeCodexToken(credential.refresh, this.#fetch);
     }

@@ -34,6 +34,7 @@ export interface SessionMenuProps {
   onRemoveFromProject: (() => void) | null;
   onRename?: () => void;
   onShare?: () => void;
+  onCopyId?: () => void;
   onCopyPath?: () => void;
   onOpenInFileBrowser?: () => void;
   onOpenInTerminal?: () => void;
@@ -169,6 +170,15 @@ export function SessionMenuContent({
             <span>{t("sessionMenu.share")}</span>
           </>,
           props.onShare,
+        )}
+      {props.onCopyId &&
+        slots.item(
+          "copy-id",
+          <>
+            <Copy className="size-4" />
+            <span>{t("sessionMenu.copyId")}</span>
+          </>,
+          props.onCopyId,
         )}
       {props.onShare && slots.separator("after-share")}
       {props.onCopyPath && (

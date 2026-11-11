@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { WorkspaceContext, type WorkspaceContextValue } from "@/hooks/agent-contexts";
 
@@ -90,5 +90,12 @@ describe("HostImage", () => {
     );
     renderWithToken("ogk_secret");
     await waitFor(() => expect(screen.getByText("attachments.imageUnavailable")).toBeTruthy());
+  });
+
+  test("a load error shows the placeholder instead of a broken image", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderWithToken(null);
+    fireEvent.error(screen.getByRole("img", { name: "shot" }));
+    expect(screen.getByText("attachments.imageUnavailable")).toBeTruthy();
   });
 });
