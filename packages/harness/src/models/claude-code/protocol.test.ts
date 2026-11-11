@@ -2,6 +2,7 @@ import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil
 import { describe, expect, test } from "vite-plus/test";
 import { normalizeModelError } from "../transport.ts";
 import {
+  assistantErrorMessage,
   CHECKPOINT_OPEN,
   CONTINUE_NOTE,
   checkpointContent,
@@ -181,5 +182,27 @@ describe("errorMessage", () => {
     const status = Number(/(?:^|\D)(401|403|408|409|422|429|5\d\d)(?:\D|$)/u.exec(message)?.[1]);
     const error = Object.assign(new Error(message), Number.isFinite(status) ? { status } : {});
     expect(normalizeModelError(error).code).toBe(code);
+  });
+});
+
+describe("assistantErrorMessage", () => {
+  // The SDK hands us a bare error code; each must reach OpenGUI's classifier even
+  // though a ClaudeCodeError carries no numeric status — only its wording.
+  test.each([
+    ["invalid_request", "invalid_request"],
+    ["model_not_found", "invalid_request"],
+    ["rate_limit", "rate_limit"],
+    ["billing_error", "rate_limit"],
+    ["overloaded", "provider_unavailable"],
+    ["server_error", "provider_unavailable"],
+  ])("%s is classified as %s", (code, expected) => {
+    const message = assistantErrorMessage(code);
+    expect(normalizeModelError(new Error(message)).code).toBe(expected);
+  });
+
+  test("invalid_request keeps the bare code out of a dead end", () => {
+    const message = assistantErrorMessage("invalid_request");
+    expect(message).toMatch(/invalid request/i);
+    expect(normalizeModelError(new Error(message)).code).not.toBe("unknown");
   });
 });
