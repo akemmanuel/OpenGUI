@@ -82,7 +82,7 @@ export interface WorkspaceContextValue {
   isLocalWorkspace: boolean;
   /** Desktop Shell + Local Workspace: native OS directory picker. */
   supportsNativeDirectoryPicker: boolean;
-  /** Base URL for attachment/image paths; null for Electron local backend. */
+  /** Host URL attachment/image paths load from (the sidecar for Desktop Local). */
   attachmentBaseUrl: string | null;
   /** Bearer credential for image requests to a token-authenticated Remote Host. */
   attachmentAuthToken: string | null;

@@ -12,6 +12,7 @@ const fixture = vi.hoisted(() => ({
   submit: vi.fn(),
   stop: vi.fn(),
   commands: [] as Array<{ name: string }>,
+  imageServerUrls: [] as Array<string | null | undefined>,
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -30,7 +31,10 @@ vi.mock("@/components/PromptContextStatus", () => ({
   ),
 }));
 vi.mock("@/components/PromptImageMentions", () => ({
-  PromptImageMentions: () => null,
+  PromptImageMentions: ({ serverUrl }: { serverUrl: string | null | undefined }) => {
+    fixture.imageServerUrls.push(serverUrl);
+    return null;
+  },
   usePromptImages: () => [],
 }));
 vi.mock("@/components/FileMentionPopover", () => ({ FileMentionPopover: () => null }));
@@ -78,6 +82,7 @@ vi.mock("@/hooks/use-agent-state", () => ({
     activeWorkspace: { isLocal: true },
     activeWorkspaceId: "local",
     workspaceServerUrl: null,
+    attachmentBaseUrl: "http://127.0.0.1:3001",
   }),
 }));
 
@@ -87,6 +92,12 @@ describe("PromptBox interactions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fixture.commands = [];
+    fixture.imageServerUrls = [];
+  });
+
+  test("previews composer images through the Host, never as file:// URLs", () => {
+    render(<PromptBox queueMode="queue" onQueueModeChange={vi.fn()} onSubmit={fixture.submit} />);
+    expect(fixture.imageServerUrls.at(-1)).toBe("http://127.0.0.1:3001");
   });
   afterEach(cleanup);
 
