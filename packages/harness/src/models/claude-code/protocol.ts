@@ -387,6 +387,9 @@ export function assistantErrorMessage(code: string) {
   switch (code) {
     case "authentication_failed":
     case "oauth_org_not_allowed":
+    case "account_on_hold":
+    case "verification_required":
+    case "cloud_credential_error":
       return errorMessage(`authentication failed (${code})`);
     case "billing_error":
       return errorMessage("billing: usage limit reached");
@@ -397,6 +400,16 @@ export function assistantErrorMessage(code: string) {
       return errorMessage(`overloaded (${code})`);
     case "max_output_tokens":
       return errorMessage("the response exceeded the maximum output tokens");
+    case "invalid_request":
+      // Anthropic's 400 for a malformed request: often a context too large to send,
+      // or an attachment the session still references but can no longer read.
+      return errorMessage(
+        "invalid request: Claude rejected this request as invalid. The conversation may be too " +
+          "large to send, or it may reference an uploaded file that is no longer available. Start " +
+          "a new session, or remove missing attachments, and try again.",
+      );
+    case "model_not_found":
+      return errorMessage("model not found: the selected Claude model is unavailable");
     default:
       return errorMessage(code);
   }
