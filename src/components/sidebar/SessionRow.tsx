@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { getColorBorderClass, SessionContextMenu } from "@/components/SessionContextMenu";
 import { SessionItemMenu } from "@/components/SidebarItemMenus";
 import { cleanSessionTitle } from "@/lib/session-title";
+import { copyTextToClipboard } from "@/lib/browser";
 import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { openSessionShareDialog } from "@/features/identity/SessionShareDialog";
 import { SidebarRow } from "./SidebarRow";
@@ -149,6 +150,10 @@ export function SessionRow({
       }
     : null;
 
+  const copySessionId = () => {
+    void copyTextToClipboard(session.id);
+  };
+
   const confirmAndDeleteSession = useCallback(() => {
     const confirmed = window.confirm(
       t("sessionMenu.deleteSessionConfirm", { title: displayTitle }),
@@ -177,6 +182,7 @@ export function SessionRow({
           : undefined
       }
       onShare={onShare}
+      onCopyId={copySessionId}
       onDelete={permissions.delete ? confirmAndDeleteSession : undefined}
     >
       <SidebarMenuItem>
@@ -212,6 +218,7 @@ export function SessionRow({
                 permissions.manage ? () => startEditing(session.id, session.title || "") : undefined
               }
               onShare={onShare}
+              onCopyId={copySessionId}
               onDelete={permissions.delete ? confirmAndDeleteSession : undefined}
             />
           }

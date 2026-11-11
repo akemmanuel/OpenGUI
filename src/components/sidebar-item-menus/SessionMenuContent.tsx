@@ -1,5 +1,6 @@
 import {
   Check,
+  Copy,
   FolderOpen,
   FolderX,
   Palette,
@@ -32,6 +33,7 @@ export interface SessionMenuProps {
   onRemoveFromProject: (() => void) | null;
   onRename?: () => void;
   onShare?: () => void;
+  onCopyId?: () => void;
   onDelete?: () => void;
 }
 
@@ -164,6 +166,15 @@ export function SessionMenuContent({
             <span>{t("sessionMenu.share")}</span>
           </>,
           props.onShare,
+        )}
+      {props.onCopyId &&
+        slots.item(
+          "copy-id",
+          <>
+            <Copy className="size-4" />
+            <span>{t("sessionMenu.copyId")}</span>
+          </>,
+          props.onCopyId,
         )}
       {props.onShare && slots.separator("after-share")}
       {slots.separator("after-rename")}
