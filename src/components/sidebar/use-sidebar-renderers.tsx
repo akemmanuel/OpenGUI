@@ -152,6 +152,8 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
       projectLabel={
         options?.showProjectLabel && _directory ? getProjectName(_directory) : undefined
       }
+      directory={_directory || undefined}
+      isLocalWorkspace={isLocalWorkspace}
       deleteSession={deleteSession}
     />
   );
