@@ -430,7 +430,11 @@ export function normalizeModelError(error: unknown, signal?: AbortSignal): Norma
     );
   // Providers that carry no numeric status still word a bad request plainly
   // (e.g. Claude Code's `invalid_request` / `model_not_found` assistant codes).
-  if (/\binvalid[_ ]request\b|\bmodel[_ ]not[_ ]found\b|rejected the request as invalid/i.test(message))
+  if (
+    /\binvalid[_ ]request\b|\bmodel[_ ]not[_ ]found\b|rejected the request as invalid/i.test(
+      message,
+    )
+  )
     return normalizedModelError(
       "invalid_request",
       "Model provider rejected the request",
