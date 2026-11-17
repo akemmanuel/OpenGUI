@@ -395,8 +395,11 @@
   & table {
     @apply w-full border-collapse;
   }
+  /* Fit the chat column and wrap cell text so rows read at a glance.
+     Cells wrap at word boundaries, so a column never gets narrower than its
+     longest word; only tables whose words cannot fit fall back to scrolling. */
   & .markdown-table-scroll table {
-    @apply my-0 min-w-max border-separate border-spacing-0;
+    @apply my-0 border-separate border-spacing-0;
   }
   & th,
   & td {
@@ -405,7 +408,7 @@
   & .markdown-table-scroll th,
   & .markdown-table-scroll td {
     @apply border-0 border-r border-b border-border;
-    min-width: 8rem;
+    min-width: 4rem;
   }
   & .markdown-table-scroll th:last-child,
   & .markdown-table-scroll td:last-child {
@@ -416,12 +419,20 @@
   }
   & th {
     @apply bg-muted font-semibold;
+    text-wrap: balance;
   }
   & tr:nth-child(even) {
     @apply bg-muted/30;
   }
+  & th,
   & td {
     word-break: normal;
+    overflow-wrap: break-word;
+  }
+  /* URLs and paths are one unbreakable "word"; let only them break anywhere
+     so a single link cannot force the whole table wide. */
+  & td a,
+  & td code {
     overflow-wrap: anywhere;
   }
 
@@ -429,7 +440,7 @@
     & .markdown-table-scroll th,
     & .markdown-table-scroll td {
       @apply px-2 py-1.5 text-xs;
-      min-width: 6rem;
+      min-width: 3.5rem;
     }
   }
 
