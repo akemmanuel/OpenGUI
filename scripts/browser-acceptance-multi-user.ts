@@ -156,6 +156,11 @@ async function clickButton(session: string, name: string) {
   await find(session, "role", "button", "click", name);
 }
 
+async function clickAccountMenuItem(session: string, name: string) {
+  await clickButton(session, "Account and settings");
+  await find(session, "role", "menuitem", "click", name);
+}
+
 async function fillLabel(session: string, label: string, value: string) {
   await find(session, "label", label, "fill", value);
 }
@@ -244,15 +249,13 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   const owner = await login(backendUrl, "acceptance_owner", "acceptance-password");
 
   log("logout invalidates the old session and username/password login restores the account");
-  await clickButton(ownerBrowser!, "Profile and preferences");
-  await clickButton(ownerBrowser!, "Sign out");
+  await clickAccountMenuItem(ownerBrowser!, "Sign out");
   await waitForText(ownerBrowser!, "Sign in to OpenGUI");
   await fillLabel(ownerBrowser!, "Username", "acceptance_owner");
   await fillLabel(ownerBrowser!, "Password", "acceptance-password");
   await clickButton(ownerBrowser!, "Sign in");
-  // Settings is an icon button; the signed-in name in the sidebar footer proves login.
   await waitForText(ownerBrowser!, "acceptance_owner");
-  await clickButton(ownerBrowser!, "Settings");
+  await clickAccountMenuItem(ownerBrowser!, "Settings");
   await waitForText(ownerBrowser!, "People");
 
   log("invite-only registration is closed and the owner-only Team surface is visible");
@@ -605,7 +608,7 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   await expectNoText(invitedBrowser!, "Remote sharing acceptance");
 
   log("UI boundary: members cannot see owner Team controls; canInvite remains API-only today");
-  await clickButton(invitedBrowser!, "Settings");
+  await clickAccountMenuItem(invitedBrowser!, "Settings");
   await waitForText(invitedBrowser!, "Models");
   await expectNoText(invitedBrowser!, "People");
   await expectText(invitedBrowser!, "Models");
