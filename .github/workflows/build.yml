@@ -6,7 +6,6 @@ on:
       version:
         description: Package version to validate and build (without a leading v)
         required: true
-        default: 0.6.0-rc.1
   push:
     tags: ["v*"]
 
