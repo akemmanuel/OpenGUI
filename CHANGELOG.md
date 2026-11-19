@@ -1,12 +1,31 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 ### Models
 
 - New Claude Code provider: run Claude models through Claude Code with your Claude subscription
   (Claude Code's login on the Host, or a `claude setup-token` token) or an Anthropic API key.
   OpenGUI still runs every tool; Claude Code only answers. See `docs/claude-code.md`.
+- GPT-6.2 Sol and Astra are available through the refreshed OpenAI and ChatGPT/Codex catalogs,
+  subject to account access.
+
+### Files and sessions
+
+- Open the Files panel to browse and search project files, preview supported formats, and open
+  file links from the transcript.
+- Session menus can copy the session ID or working directory. On local Desktop workspaces they
+  can also open the working directory in the file manager or terminal.
+- New chats show the project folder name above the composer. Skills are managed in Settings.
+
+### Fixes
+
+- Image previews handle paths with spaces, supported images from the Host's temporary directory,
+  and attachments in the Desktop composer.
+- Markdown table cells wrap to fit the chat column. Tables that need more space still scroll.
+- Shell calls return after the foreground process exits even if a background process holds its
+  output streams open.
+- Claude Code reports actionable errors when a request is rejected or a model is unavailable.
 
 ## 0.7.5
 

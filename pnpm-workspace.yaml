@@ -2,21 +2,29 @@ packages:
   - "packages/*"
 
 overrides:
-  "@vitest/browser": 5.0.4
-  "@vitest/browser-preview": 5.0.4
-  vitest: 5.0.4
+  "@vitest/browser": 5.0.5
+  "@vitest/browser-preview": 5.0.5
+  vitest: 5.0.5
   # Patched releases of electron-builder's transitive packages (build-time only).
   "@xmldom/xmldom@<0.8.15": ^0.8.15
   "brace-expansion@<1.1.21": ^1.1.21
   "http-cache-semantics@<4.2.1": ^4.2.1
-  "undici@>=6 <6.28.1": ^6.28.1
+  # Patched releases used by the Host and provider SDKs.
+  "@hono/node-server@>=2 <2.1.6": ^2.1.9
+  "hono@>=4 <4.13.16": ^4.13.19
+  "undici@>=6 <6.29.1": ^6.29.1
+  "undici@>=7 <7.30.1": ^7.30.1
+  "body-parser@>=2 <2.4.0": ^2.4.0
+  "fast-uri@>=3 <3.1.9": ^3.1.9
+  "qs@>=6.7.0 <6.16.1": ^6.16.1
+  "zod@>=4 <4.6.6": 4.6.7
 
 peerDependencyRules:
   allowedVersions:
     # Vite Plus provides a Vite-compatible API under its own package version.
-    vite: 1.2.0
+    vite: 1.3.0
     # better-auth's optional peer is only used for its own tests.
-    vitest: 5.0.4
+    vitest: 5.0.5
 
 allowBuilds:
   "@google/genai": true
@@ -27,14 +35,14 @@ allowBuilds:
   protobufjs: true
 
 minimumReleaseAgeExclude:
-  - "@voidzero-dev/vite-plus-core@1.2.0"
-  - "@voidzero-dev/vite-plus-darwin-arm64@1.2.0"
-  - "@voidzero-dev/vite-plus-darwin-x64@1.2.0"
-  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.2.0"
-  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.2.0"
-  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.2.0"
-  - "@voidzero-dev/vite-plus-linux-x64-musl@1.2.0"
-  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.2.0"
-  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.2.0"
-  - vite-plus@1.2.0
-  - electron@44.7.2
+  - "@voidzero-dev/vite-plus-core@1.3.0"
+  - "@voidzero-dev/vite-plus-darwin-arm64@1.3.0"
+  - "@voidzero-dev/vite-plus-darwin-x64@1.3.0"
+  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.3.0"
+  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.3.0"
+  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.3.0"
+  - "@voidzero-dev/vite-plus-linux-x64-musl@1.3.0"
+  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.3.0"
+  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.3.0"
+  - vite-plus@1.3.0
+  - electron@44.9.1

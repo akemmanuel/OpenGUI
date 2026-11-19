@@ -357,7 +357,7 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   );
   await clickButton("Back");
   await browser("fill", "input[type=search]", "page.html");
-  await waitForText("page.html");
+  await waitForText("1 result in project");
   await browser("click", 'aside button[title="page.html"]');
   await browser(
     "wait",
@@ -372,7 +372,7 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   );
   await clickButton("Back");
   await browser("fill", "input[type=search]", "document.pdf");
-  await waitForText("document.pdf");
+  await waitForText("1 result in project");
   await browser("click", 'aside button[title="document.pdf"]');
   await browser(
     "wait",

@@ -45,7 +45,6 @@ import { AppSidebar } from "./components/AppSidebar";
 import { findLastUserMessageBeforeRevert } from "@/components/message-list/message-revert";
 import { MessageList } from "./components/MessageList";
 import { PromptBox } from "./components/PromptBox";
-import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
 
@@ -53,6 +52,9 @@ const SettingsView = lazy(() =>
   import("./components/settings/SettingsView").then((module) => ({
     default: module.SettingsView,
   })),
+);
+const SetupWizard = lazy(() =>
+  import("./components/SetupWizard").then((module) => ({ default: module.SetupWizard })),
 );
 
 export function AppContent({
@@ -337,7 +339,11 @@ export function App() {
                 suppressBootErrors={showWizard}
                 onDismissSetup={dismissSetup}
               />
-              {showWizard && <SetupWizard onComplete={dismissSetup} />}
+              {showWizard && (
+                <Suspense fallback={null}>
+                  <SetupWizard onComplete={dismissSetup} />
+                </Suspense>
+              )}
               <Toaster richColors closeButton />
             </SidebarProvider>
           </FilesPanelProvider>
