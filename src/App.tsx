@@ -1,6 +1,7 @@
 import type { SectionId } from "@/components/settings/SettingsView";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ProjectPathDialog } from "@/components/ProjectPathDialog";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import {
@@ -32,12 +33,14 @@ import {
 import { useUpdateCheck } from "@/hooks/use-update-check";
 import { useContextInfo } from "@/hooks/use-context-info";
 import { useChatWidth } from "@/hooks/use-chat-width";
+import { getProjectName } from "@/lib/path";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageSet } from "@/lib/persistence/storage";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { DesktopShellProvider } from "@/shell/provider";
 import { notifyError, notifyErrorDeduped, resetNotifyErrorDedup } from "@/lib/notify";
 import { normalizeTerminalOutput } from "@/lib/terminal-output";
+import { useOpenProject } from "@/features/app-shell/useOpenProject";
 import { useAppKeyboardShortcuts } from "@/features/app-shell/useAppKeyboardShortcuts";
 import { useActiveSessionQueue } from "@/features/session/useActiveSessionQueue";
 import { useChatSessionSurface } from "@/features/session/useChatSessionSurface";
@@ -61,17 +64,23 @@ export function AppContent({
   detachedProject,
   suppressBootErrors,
   onDismissSetup,
+  setupPaused,
+  onPauseSetup,
 }: {
   detachedProject?: string;
   suppressBootErrors?: boolean;
   onDismissSetup?: () => void;
+  setupPaused?: boolean;
+  onPauseSetup?: (paused: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [chatWidth] = useChatWidth();
   const [settingsTab, setSettingsTab] = useState<SectionId | undefined>();
+  const [showModelConnections, setShowModelConnections] = useState(false);
   const identityActor = useIdentityActor();
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
   const leftSidebar = useSidebar();
+  const openProject = useOpenProject();
   const {
     sendPrompt,
     abortSession,
@@ -105,6 +114,7 @@ export function AppContent({
     bootLogs,
     lastError,
     defaultChatDirectory,
+    canManageProjects,
     connections,
     workspaces,
     supportsMultipleWorkspaces,
@@ -116,15 +126,27 @@ export function AppContent({
   const activeSessionId = sessionActiveId;
   const activeSessionError = activeSessionId ? (sessionErrors[activeSessionId] ?? null) : null;
 
-  const { activeSession, chatSurfaceState, hasConnectedProjects, showPromptBox } =
-    useChatSessionSurface({
-      sessions,
-      activeSessionId,
-      activeTargetDirectory,
-      sessionMeta,
-      connections,
-      defaultChatDirectory,
-    });
+  const {
+    activeSession,
+    activeSessionDirectory,
+    chatSurfaceState,
+    hasConnectedProjects,
+    showPromptBox,
+  } = useChatSessionSurface({
+    sessions,
+    activeSessionId,
+    activeTargetDirectory,
+    sessionMeta,
+    connections,
+    defaultChatDirectory,
+  });
+  const shareOnly =
+    identityActor?.type === "user" &&
+    identityActor.role !== "owner" &&
+    identityActor.role !== "admin";
+  const canOpenProject = canManageProjects && !shareOnly;
+  const chatTitle = activeSession?.title;
+  const chatProject = activeSessionDirectory ? getProjectName(activeSessionDirectory) : "";
   const canRunActiveSession = sessionUiPermissions(activeSession?._accessRole).run;
 
   const revertToLastMessage = useCallback(() => {
@@ -186,14 +208,24 @@ export function AppContent({
   const updateCheck = useUpdateCheck();
 
   useEffect(() => {
-    const openSettings = () => {
+    const openSettings = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ showModelConnections?: boolean; returnToSetup?: boolean }>
+      ).detail;
       setSettingsTab(undefined);
-      onDismissSetup?.();
+      setShowModelConnections(detail?.showModelConnections === true);
+      if (detail?.returnToSetup) onPauseSetup?.(true);
+      else onDismissSetup?.();
       setActiveView("settings");
     };
     window.addEventListener("opengui:open-settings", openSettings);
     return () => window.removeEventListener("opengui:open-settings", openSettings);
-  }, [onDismissSetup]);
+  }, [onDismissSetup, onPauseSetup]);
+
+  function openChat() {
+    setActiveView("chat");
+    onPauseSetup?.(false);
+  }
 
   return (
     <>
@@ -202,26 +234,42 @@ export function AppContent({
         highlightedSessionId={activeView === "chat" ? sessionActiveId : null}
         onOpenSettings={(tab) => {
           setSettingsTab(tab);
+          setShowModelConnections(false);
           onDismissSetup?.();
           setActiveView("settings");
         }}
-        onOpenChat={() => setActiveView("chat")}
+        onOpenChat={openChat}
         settingsActive={activeView === "settings"}
       />
       <SidebarInset className="overflow-hidden">
         <div className="relative flex flex-col h-full">
           <TitleBar
             onToggleLeftSidebar={
-              detachedProject || (leftSidebar.state === "expanded" && !leftSidebar.isMobile)
+              activeView === "settings" ||
+              detachedProject ||
+              (leftSidebar.state === "expanded" && !leftSidebar.isMobile)
                 ? undefined
                 : leftSidebar.toggleSidebar
             }
             leadingControlBelow={activeView === "settings"}
             trailingControl={activeView === "chat" ? <FilesPanelToggle /> : undefined}
+            chatContext={
+              activeView === "chat" &&
+              (showPromptBox || activeSession) &&
+              (chatTitle || chatProject)
+                ? {
+                    title: chatTitle || chatProject || t("sidebar.untitled"),
+                    project: chatTitle ? chatProject : undefined,
+                  }
+                : undefined
+            }
           />
 
           <div className="flex min-h-0 flex-1">
-            <div className="relative flex-1 flex flex-col min-w-0 min-h-0 select-none">
+            <div
+              className="chat-workspace relative flex min-h-0 min-w-0 flex-1 flex-col select-none"
+              style={{ "--chat-width": `${chatWidth}%` } as React.CSSProperties}
+            >
               {isBooting && (
                 <div className="flex items-center gap-2 px-4 py-2 border-b border-border text-sm text-muted-foreground bg-muted/30">
                   <Spinner className="size-4 shrink-0" />
@@ -242,7 +290,12 @@ export function AppContent({
                     </div>
                   }
                 >
-                  <SettingsView initialTab={settingsTab} onBack={() => setActiveView("chat")} />
+                  <SettingsView
+                    initialTab={settingsTab}
+                    showModelConnections={showModelConnections}
+                    backToSetup={setupPaused}
+                    onBack={openChat}
+                  />
                 </Suspense>
               ) : (
                 <>
@@ -255,7 +308,8 @@ export function AppContent({
                     ) : (
                       <NoProjectConnected
                         canStartChat={chatSurfaceState.kind === "default-chat"}
-                        shareOnly={identityActor?.type === "user"}
+                        shareOnly={shareOnly}
+                        onOpenProject={canOpenProject ? openProject : undefined}
                         onStartChat={() => {
                           void startNewChat();
                         }}
@@ -266,15 +320,16 @@ export function AppContent({
                   )}
 
                   {showPromptBox && !(workspaces.length === 0 && supportsMultipleWorkspaces) && (
-                    <div className="relative z-[1] shrink-0 px-0 md:px-4 app-safe-bottom-inset-prompt">
-                      <div
-                        className="w-full md:mx-auto md:w-[var(--chat-width)]"
-                        style={{ "--chat-width": `${chatWidth}%` } as React.CSSProperties}
-                      >
+                    <div
+                      data-slot="chat-composer"
+                      className="app-safe-bottom-inset-prompt relative z-[1] shrink-0 px-3 min-[375px]:px-4 md:px-8"
+                    >
+                      <div className="chat-column">
                         {queuedPrompts.length > 0 && (
-                          <div className="mb-1.5">
+                          <div className="mb-2">
                             <QueueList
                               items={queuedPrompts}
+                              running={isBusy}
                               onRemove={queueHandlers.remove}
                               onMoveUp={queueHandlers.moveUp}
                               onMoveDown={queueHandlers.moveDown}
@@ -288,6 +343,7 @@ export function AppContent({
                         )}
                         <PromptBox
                           autoFocus={!suppressBootErrors}
+                          isNewProjectChat={Boolean(chatProject) && messageOrder.length === 0}
                           disabled={!canRunActiveSession}
                           isLoading={isBusy}
                           queueMode={queueMode}
@@ -317,37 +373,57 @@ export function AppContent({
   );
 }
 
-export function App() {
-  const detachedProject = getDesktopShellClient().detachedProjects.getCurrent() ?? undefined;
-
+function WorkspaceApp({ detachedProject }: { detachedProject?: string }) {
+  const actor = useIdentityActor();
+  const canConfigureHost =
+    actor?.type !== "user" || actor.role === "owner" || actor.role === "admin";
   const [showWizard, setShowWizard] = useState(
     () => storageGet(STORAGE_KEYS.SETUP_COMPLETE) !== "true",
   );
+  const [setupPaused, setSetupPaused] = useState(false);
+  const needsSetup = showWizard && canConfigureHost;
   const dismissSetup = useCallback(() => {
     storageSet(STORAGE_KEYS.SETUP_COMPLETE, "true");
     setShowWizard(false);
+    setSetupPaused(false);
   }, []);
 
   return (
+    <HostProvider detachedProject={detachedProject}>
+      <FilesPanelProvider>
+        <SidebarProvider className="!h-dvh">
+          <AppContent
+            detachedProject={detachedProject}
+            suppressBootErrors={needsSetup}
+            onDismissSetup={canConfigureHost ? dismissSetup : undefined}
+            setupPaused={setupPaused}
+            onPauseSetup={setSetupPaused}
+          />
+          <ProjectPathDialog />
+          {needsSetup && !setupPaused && (
+            <Suspense fallback={null}>
+              <SetupWizard onComplete={dismissSetup} />
+            </Suspense>
+          )}
+          <Toaster
+            position="top-right"
+            offset={{ top: 56, right: 16 }}
+            mobileOffset={{ top: "calc(var(--app-safe-top, 0px) + 56px)" }}
+            richColors
+            closeButton
+          />
+        </SidebarProvider>
+      </FilesPanelProvider>
+    </HostProvider>
+  );
+}
+
+export function App() {
+  const detachedProject = getDesktopShellClient().detachedProjects.getCurrent() ?? undefined;
+  return (
     <DesktopShellProvider>
       <IdentityGate>
-        <HostProvider detachedProject={detachedProject}>
-          <FilesPanelProvider>
-            <SidebarProvider className="!h-dvh">
-              <AppContent
-                detachedProject={detachedProject}
-                suppressBootErrors={showWizard}
-                onDismissSetup={dismissSetup}
-              />
-              {showWizard && (
-                <Suspense fallback={null}>
-                  <SetupWizard onComplete={dismissSetup} />
-                </Suspense>
-              )}
-              <Toaster richColors closeButton />
-            </SidebarProvider>
-          </FilesPanelProvider>
-        </HostProvider>
+        <WorkspaceApp detachedProject={detachedProject} />
       </IdentityGate>
     </DesktopShellProvider>
   );

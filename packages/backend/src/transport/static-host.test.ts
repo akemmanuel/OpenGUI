@@ -13,6 +13,7 @@ beforeEach(async () => {
   await mkdir(join(temporaryDirectory, "dist"));
   await writeFile(join(temporaryDirectory, "dist", "index.html"), "<h1>OpenGUI</h1>");
   await writeFile(join(temporaryDirectory, "dist", "app.js"), "export {};");
+  await writeFile(join(temporaryDirectory, "dist", "pdf.worker.mjs"), "export {};");
   process.chdir(temporaryDirectory);
 });
 
@@ -36,5 +37,12 @@ describe("static frontend hosting", () => {
     const response = await serveBuiltFile(new Request("https://host.example/%E0%A4%A"));
 
     expect(await response.text()).toBe("<h1>OpenGUI</h1>");
+  });
+
+  test("serves module workers as JavaScript", async () => {
+    const worker = await serveBuiltFile(new Request("https://host.example/pdf.worker.mjs"));
+
+    expect(await worker.text()).toBe("export {};");
+    expect(worker.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
   });
 });

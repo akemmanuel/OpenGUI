@@ -1,5 +1,14 @@
 import { Download } from "lucide-react";
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { HostImage } from "@/components/HostImage";
 import { MarkdownImageContext, MarkdownRenderer } from "@/components/MarkdownRenderer";
@@ -29,9 +38,12 @@ const PdfPreview = lazy(() => import("./PdfPreview"));
 const LINE_HEIGHT_PX = 20;
 
 function CodeView({ text, name, line }: { text: string; name: string; line: number | null }) {
+  const { t } = useTranslation();
+  const linkedLineId = useId();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [highlighted, setHighlighted] = useState<React.ReactNode>(null);
   const lineCount = useMemo(() => text.split("\n").length, [text]);
+  const linkedLine = line && line <= lineCount ? line : null;
 
   useEffect(() => {
     setHighlighted(null);
@@ -60,18 +72,25 @@ function CodeView({ text, name, line }: { text: string; name: string; line: numb
   return (
     <div
       ref={scrollRef}
+      role="region"
+      aria-label={name}
+      aria-describedby={linkedLine ? linkedLineId : undefined}
+      tabIndex={0}
       data-responsive-allow="horizontal-scroll"
-      className="min-h-0 flex-1 overflow-auto select-text"
+      className="min-h-0 flex-1 overflow-auto select-text focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
     >
+      <span id={linkedLineId} role="status" className="sr-only">
+        {linkedLine && t("filesPanel.linkedLine", { line: linkedLine })}
+      </span>
       <div
         className="relative flex min-w-max py-2 font-mono text-xs"
         style={{ lineHeight: `${LINE_HEIGHT_PX}px` }}
       >
-        {line && line <= lineCount && (
+        {linkedLine && (
           <div
             aria-hidden
             className="pointer-events-none absolute inset-x-0 bg-amber-400/15"
-            style={{ top: 8 + (line - 1) * LINE_HEIGHT_PX, height: LINE_HEIGHT_PX }}
+            style={{ top: 8 + (linkedLine - 1) * LINE_HEIGHT_PX, height: LINE_HEIGHT_PX }}
           />
         )}
         <pre
@@ -79,6 +98,14 @@ function CodeView({ text, name, line }: { text: string; name: string; line: numb
           className="sticky left-0 z-[1] m-0 shrink-0 bg-sidebar pr-3 pl-2 text-right text-muted-foreground tabular-nums select-none"
         >
           {Array.from({ length: lineCount }, (_, index) => String(index + 1)).join("\n")}
+          {linkedLine && (
+            <span
+              className="absolute inset-x-0 bg-sidebar-accent pr-3 pl-2 font-semibold text-sidebar-accent-foreground"
+              style={{ top: (linkedLine - 1) * LINE_HEIGHT_PX }}
+            >
+              {linkedLine}
+            </span>
+          )}
         </pre>
         <pre className="relative m-0 pr-4 whitespace-pre">
           <code>{highlighted ?? text}</code>

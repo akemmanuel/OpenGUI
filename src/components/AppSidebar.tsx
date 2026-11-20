@@ -15,10 +15,9 @@ import { useActions, useSessionState, useWorkspaceState } from "@/hooks/use-agen
 import { useOutsideClick } from "@/hooks/use-outside-click";
 import { SESSION_PAGE_SIZE } from "@/lib/constants";
 import { openAddWorkspaceDialog } from "@/hooks/workspace-guards";
-import { notifyInfo, notifyUnknownError } from "@/lib/notify";
 import { getProjectName, normalizeProjectPath } from "@/lib/path";
 import { useRespondingSidebarEnabled } from "@/lib/responding-sidebar";
-import { ProjectPathDialog, requestProjectPath } from "./ProjectPathDialog";
+import { useOpenProject } from "@/features/app-shell/useOpenProject";
 import { CollapsedProjectPopover } from "./sidebar/CollapsedProjectPopover";
 import { SidebarContentSections } from "./sidebar/SidebarContentSections";
 import { RespondingSidebarSections } from "./sidebar/RespondingSidebarSections";
@@ -66,8 +65,6 @@ export function AppSidebar({
     deleteSession,
     renameSession,
     removeProject,
-    openDirectory,
-    connectToProject,
     setSessionColor,
     setSessionTags,
     setSessionPinned,
@@ -80,6 +77,7 @@ export function AppSidebar({
   const {
     sessions,
     activeSessionId,
+    activeTargetDirectory,
     busySessionIds,
     queuedPrompts,
     pendingQuestions,
@@ -96,11 +94,8 @@ export function AppSidebar({
     connections,
     projectMeta,
     isLocalWorkspace,
-    supportsNativeDirectoryPicker,
     activeWorkspace,
-    workspaces,
     canManageProjects,
-    workspaceDirectory,
     defaultChatDirectory,
     bootState,
   } = useWorkspaceState();
@@ -164,6 +159,9 @@ export function AppSidebar({
   const [visibleChatCount, setVisibleChatCount] = useState(SESSION_PAGE_SIZE);
   const [visibleFlatCount, setVisibleFlatCount] = useState(SESSION_PAGE_SIZE);
   const [selectedProjectDirectory, setSelectedProjectDirectory] = useState("");
+  const selectedProjectLabel = selectedProjectDirectory
+    ? getProjectName(selectedProjectDirectory)
+    : t("sidebar.allProjects");
   const orderedFlatSessions = useMemo(() => {
     const selected = normalizeProjectPath(selectedProjectDirectory);
     const scoped = selected
@@ -312,31 +310,7 @@ export function AppSidebar({
     };
   }, [isMobile, setOpenMobile, setSidebarOpen]);
 
-  const handleAddProject = useCallback(async () => {
-    if (!canManageProjects) {
-      notifyInfo(t("workspace.requiredBeforeProject"));
-      if (workspaces.length === 0) openAddWorkspaceDialog();
-      return;
-    }
-    const dir = supportsNativeDirectoryPicker
-      ? await openDirectory()
-      : await requestProjectPath(workspaceDirectory ?? undefined);
-    if (!dir) return;
-    try {
-      await connectToProject(dir);
-    } catch (error) {
-      notifyUnknownError(error);
-    }
-  }, [
-    canManageProjects,
-    connectToProject,
-    supportsNativeDirectoryPicker,
-    openDirectory,
-    requestProjectPath,
-    t,
-    workspaceDirectory,
-    workspaces.length,
-  ]);
+  const handleAddProject = useOpenProject();
 
   const hasUnsentDraft = useCallback(
     (sessionId: string) => Boolean(sessionDrafts[`session:${sessionId}`]?.trim()),
@@ -405,6 +379,8 @@ export function AppSidebar({
     workspaceId: activeWorkspace?.id,
   });
 
+  if (settingsActive) return null;
+
   return (
     <Sidebar collapsible="offcanvas" className="select-none">
       {profileView && <ProfilePanel view={profileView} onClose={() => setProfileView(null)} />}
@@ -425,13 +401,14 @@ export function AppSidebar({
             clearSearch: t("sidebar.clearSearch"),
             newChat: t("sidebar.newChat"),
           }}
+          newChatDirectory={activeTargetDirectory}
           setSearchQuery={setSearchQuery}
           onOpenChat={onOpenChat}
           startNewChat={startNewChat}
           closeMobileSidebar={closeMobileSidebar}
           projectSelector={
             respondingSidebarEnabled && sidebarState !== "collapsed" ? (
-              <div className="group-data-[collapsible=icon]:hidden flex h-9 items-center gap-1 border-b border-sidebar-border/60 px-2">
+              <div className="group-data-[collapsible=icon]:hidden mx-3 mb-1 flex min-h-9 items-center gap-1">
                 <Select
                   value={selectedProjectDirectory || "__all_projects__"}
                   onValueChange={(value) => {
@@ -444,12 +421,10 @@ export function AppSidebar({
                   <SelectTrigger
                     size="sm"
                     aria-label={t("sidebar.projectFilter")}
-                    className="h-7 min-w-0 flex-1 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 dark:bg-transparent dark:hover:bg-sidebar-accent"
+                    className="h-9 min-w-0 flex-1 border-0 bg-transparent px-2 shadow-none dark:bg-transparent dark:hover:bg-sidebar-accent"
                   >
-                    <SelectValue>
-                      {selectedProjectDirectory
-                        ? getProjectName(selectedProjectDirectory)
-                        : t("sidebar.allProjects")}
+                    <SelectValue title={selectedProjectLabel} data-responsive-allow="text-clip">
+                      {selectedProjectLabel}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent align="start">
@@ -472,7 +447,7 @@ export function AppSidebar({
                       setVisibleFlatCount(SESSION_PAGE_SIZE);
                       void removeProject(directory);
                     }}
-                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-sidebar-ring"
                   >
                     <X className="size-3.5" />
                   </button>
@@ -483,7 +458,7 @@ export function AppSidebar({
                     aria-label={t("sidebar.addProject")}
                     title={t("sidebar.addProject")}
                     onClick={() => void handleAddProject()}
-                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-sidebar-ring"
                   >
                     <Plus className="size-3.5" />
                   </button>
@@ -648,8 +623,6 @@ export function AppSidebar({
           onOpenProfile={setProfileView}
         />
       )}
-
-      <ProjectPathDialog />
     </Sidebar>
   );
 }

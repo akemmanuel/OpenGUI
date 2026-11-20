@@ -158,8 +158,8 @@ describe("PromptBox interactions", () => {
       "prompt.steerDirection",
     );
     expect(screen.getByText("context 73")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "prompt.steer" }));
-    await userEvent.click(screen.getByRole("button", { name: "prompt.stopGenerating" }));
+    await userEvent.click(screen.getByRole("button", { name: "prompt.steerTitle" }));
+    await userEvent.click(screen.getByRole("button", { name: "prompt.stop" }));
     expect(onQueueModeChange).toHaveBeenCalledWith("queue");
     expect(fixture.stop).toHaveBeenCalledOnce();
   });
@@ -174,7 +174,7 @@ describe("PromptBox interactions", () => {
         onSubmit={fixture.submit}
       />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "prompt.queue" }));
+    await userEvent.click(screen.getByRole("button", { name: "prompt.queueTitle" }));
     expect(onQueueModeChange).toHaveBeenCalledWith("after-part");
   });
 

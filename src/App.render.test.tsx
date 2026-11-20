@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
@@ -108,13 +108,18 @@ vi.mock("@/features/session/useChatSessionSurface", () => ({
 }));
 
 import { AppContent } from "./App";
+import { STORAGE_KEYS } from "@/lib/constants";
+import { storageSet } from "@/lib/persistence/storage";
 
 describe("App shell orchestration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fixture.role = "view";
   });
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    storageSet(STORAGE_KEYS.CHAT_WIDTH, "standard");
+  });
 
   test("keeps view-only Sessions readable while permission-disabling the prompt", () => {
     render(<AppContent />);
@@ -128,6 +133,19 @@ describe("App shell orchestration", () => {
 
     expect(promptFooter?.classList.contains("relative")).toBe(true);
     expect(promptFooter?.classList.contains("z-[1]")).toBe(true);
+  });
+
+  test("shares the configured chat width with the transcript and composer", () => {
+    render(<AppContent />);
+    const workspace = screen.getByText("transcript").closest<HTMLElement>(".chat-workspace");
+    expect(screen.getByTestId("prompt").closest(".chat-column")?.closest(".chat-workspace")).toBe(
+      workspace,
+    );
+    expect(workspace?.style.getPropertyValue("--chat-width")).toBe("70%");
+    act(() => storageSet(STORAGE_KEYS.CHAT_WIDTH, "full"));
+    expect(workspace?.style.getPropertyValue("--chat-width")).toBe("100%");
+    act(() => storageSet(STORAGE_KEYS.CHAT_WIDTH, "83"));
+    expect(workspace?.style.getPropertyValue("--chat-width")).toBe("83%");
   });
 
   test("switches settings through sidebar, browser event, and back action", async () => {

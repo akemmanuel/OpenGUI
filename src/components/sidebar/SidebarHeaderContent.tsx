@@ -1,5 +1,6 @@
 import { PanelLeftIcon, Search, SquarePen, X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
+import { getProjectName } from "@/lib/path";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ export function SidebarHeaderContent({
   hasActiveSearch,
   detachedProject,
   showChatsSection,
+  newChatDirectory,
   labels,
   setSearchQuery,
   onOpenChat,
@@ -28,6 +30,7 @@ export function SidebarHeaderContent({
   hasActiveSearch: boolean;
   detachedProject?: string;
   showChatsSection: boolean;
+  newChatDirectory?: string | null;
   labels: {
     searchPlaceholder: string;
     clearSearch: string;
@@ -43,12 +46,46 @@ export function SidebarHeaderContent({
   const { t } = useTranslation();
   const { toggleSidebar } = useSidebar();
 
+  const newChatAction = !detachedProject && showChatsSection && (
+    <div className="mx-3 mt-1 mb-2 group-data-[collapsible=icon]:hidden">
+      <button
+        type="button"
+        aria-label={labels.newChat}
+        onClick={() => {
+          onOpenChat();
+          void startNewChat();
+          closeMobileSidebar();
+        }}
+        className="flex min-h-10 w-full items-center gap-2.5 rounded-md bg-sidebar-accent/60 px-2 text-left text-sm font-semibold text-foreground transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-sidebar-ring"
+      >
+        <SquarePen className="size-4 shrink-0 text-primary" />
+        <span className="flex min-w-0 flex-col py-1.5">
+          <span>{labels.newChat}</span>
+          {newChatDirectory && (
+            <span
+              className="truncate text-xs font-normal text-muted-foreground"
+              title={newChatDirectory}
+              data-responsive-allow="text-clip"
+            >
+              {getProjectName(newChatDirectory)}
+            </span>
+          )}
+        </span>
+      </button>
+    </div>
+  );
+
   return (
-    <SidebarHeader className="border-b border-sidebar-border p-0 gap-0 group-data-[collapsible=icon]:p-2">
-      {selectionActions ?? (
+    <SidebarHeader className="gap-0 p-0 group-data-[collapsible=icon]:p-2">
+      {selectionActions ? (
+        <>
+          {selectionActions}
+          {newChatAction}
+        </>
+      ) : (
         <>
           <div
-            className="flex items-center justify-start gap-3 h-9 shrink-0 border-b border-sidebar-border px-2 group-data-[collapsible=icon]:h-auto group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-b-0"
+            className="flex items-center justify-start gap-2 h-12 shrink-0 px-3 group-data-[collapsible=icon]:h-auto group-data-[collapsible=icon]:justify-center "
             style={
               {
                 WebkitAppRegion: "drag",
@@ -62,7 +99,7 @@ export function SidebarHeaderContent({
                 data-sidebar="trigger"
                 variant="ghost"
                 size="icon"
-                className="size-7 shrink-0"
+                className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
                 style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
                 title={`${t("workspace.hideSidebar")} (Ctrl+B)`}
                 onClick={toggleSidebar}
@@ -97,17 +134,19 @@ export function SidebarHeaderContent({
               </div>
             )}
           </div>
+          {newChatAction}
           {projectSelector}
-          <div className="group-data-[collapsible=icon]:hidden border-b border-sidebar-border/60 bg-sidebar/40">
+          <div className="mx-3 mb-2 group-data-[collapsible=icon]:hidden">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
+                aria-label={labels.searchPlaceholder}
                 placeholder={labels.searchPlaceholder}
-                className="h-8 pl-8 pr-8 text-sm rounded-none border-0 focus:ring-0 focus-visible:ring-0"
+                className="h-9 border-sidebar-border bg-background/80 pr-8 pl-8 text-sm dark:bg-background/55"
               />
               {hasActiveSearch && (
                 <button
@@ -125,23 +164,6 @@ export function SidebarHeaderContent({
             </div>
           </div>
         </>
-      )}
-      {!detachedProject && showChatsSection && (
-        <div className="group-data-[collapsible=icon]:hidden border-b border-sidebar-border">
-          <button
-            type="button"
-            aria-label={labels.newChat}
-            onClick={() => {
-              onOpenChat();
-              void startNewChat();
-              closeMobileSidebar();
-            }}
-            className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm font-medium transition-colors hover:bg-sidebar-accent/70 hover:text-foreground"
-          >
-            <SquarePen className="size-4 shrink-0" />
-            <span>{labels.newChat}</span>
-          </button>
-        </div>
       )}
     </SidebarHeader>
   );

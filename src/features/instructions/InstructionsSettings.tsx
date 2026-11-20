@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,7 +24,6 @@ import type { HostProject, OpenGuiHostClient, ProjectInstructions } from "@/prot
 
 const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 32_000;
 type Scope = "host" | "personal" | "project";
-type SharedScope = Exclude<Scope, "personal">;
 
 function useInstructionsHost() {
   const workspace = useMemo(() => getIdentityWorkspace(), []);
@@ -45,15 +44,20 @@ export function usePersonalInstructionsAvailable() {
   return Boolean(workspace && identityWorkspaceIsLocalBypass(workspace)) || actor?.type === "user";
 }
 
-/** Shared house rules: Host-wide and per project. Personal preferences live in the profile. */
-export function InstructionsSettings() {
+export function InstructionsSettings({
+  onDirtyChange,
+}: {
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const { t } = useTranslation();
   const actor = useIdentityActor();
   const { workspace, host } = useInstructionsHost();
   const localBypass = Boolean(workspace && identityWorkspaceIsLocalBypass(workspace));
   const admin =
     localBypass || (actor?.type === "user" && (actor.role === "owner" || actor.role === "admin"));
-  const [scope, setScope] = useState<SharedScope>("host");
+  const personalAvailable = usePersonalInstructionsAvailable();
+  const scopes: Scope[] = personalAvailable ? ["personal", "project", "host"] : ["host", "project"];
+  const [scope, setScope] = useState<Scope>(admin || !personalAvailable ? "host" : "personal");
   const [projects, setProjects] = useState<HostProject[]>([]);
   const [directory, setDirectory] = useState("");
   const [projectLoading, setProjectLoading] = useState(false);
@@ -61,6 +65,13 @@ export function InstructionsSettings() {
   const [retry, setRetry] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const updateDirty = useCallback(
+    (value: boolean) => {
+      setDirty(value);
+      onDirtyChange?.(value);
+    },
+    [onDirtyChange],
+  );
 
   useEffect(() => {
     if (scope !== "project") return;
@@ -91,21 +102,21 @@ export function InstructionsSettings() {
   return (
     <div className="space-y-4">
       <div
-        className="flex flex-wrap gap-2"
+        className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/45 p-1"
         role="group"
         aria-label={t("settings.instructions.scopeLabel")}
       >
-        {(["host", "project"] as const).map((item) => (
+        {scopes.map((item) => (
           <Button
             key={item}
             type="button"
             size="sm"
-            variant={scope === item ? "default" : "outline"}
+            variant={scope === item ? "default" : "ghost"}
             aria-pressed={scope === item}
             disabled={busy}
             onClick={() => {
               if (item === scope || !canLeave()) return;
-              setDirty(false);
+              updateDirty(false);
               setScope(item);
             }}
           >
@@ -113,9 +124,11 @@ export function InstructionsSettings() {
           </Button>
         ))}
       </div>
-      <p className="max-w-[70ch] text-sm leading-6 text-muted-foreground">
-        {t("settings.instructions.hierarchy")}
-      </p>
+      {scope === "project" && (
+        <p className="max-w-[70ch] text-sm leading-6 text-muted-foreground">
+          {t("settings.instructions.hierarchy")}
+        </p>
+      )}
       {scope === "project" &&
         (projectLoading ? (
           <Skeleton className="h-10 w-full" />
@@ -136,7 +149,7 @@ export function InstructionsSettings() {
               disabled={busy}
               onValueChange={(value) => {
                 if (!value || !canLeave()) return;
-                setDirty(false);
+                updateDirty(false);
                 setDirectory(value);
               }}
             >
@@ -162,7 +175,7 @@ export function InstructionsSettings() {
           scope={scope}
           directory={directory}
           admin={admin}
-          onDirty={setDirty}
+          onDirty={updateDirty}
           onBusy={setBusy}
         />
       )}
@@ -305,7 +318,7 @@ function InstructionsEditor({
     <div className={compact ? "space-y-2" : "space-y-4"}>
       <div className={compact ? "sr-only" : "space-y-1"}>
         <Label htmlFor={editorId} className="text-sm font-medium">
-          {t(compact ? "profile.personalInstructions" : "settings.instructions.label")}
+          {t(scope === "personal" ? "profile.personalInstructions" : "settings.instructions.label")}
         </Label>
       </div>
       <div>
@@ -361,7 +374,7 @@ function InstructionsEditor({
           >
             {saving
               ? t("common.loading")
-              : t(compact ? "common.save" : "settings.instructions.save")}
+              : t(compact ? "common.save" : `settings.instructions.saveScope.${scope}`)}
           </Button>
         )}
       </div>

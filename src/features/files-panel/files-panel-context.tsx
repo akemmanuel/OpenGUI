@@ -28,6 +28,8 @@ export type FilesPanelContextValue = {
   expanded: boolean;
   width: number;
   location: FilesPanelLocation | null;
+  folderPath: string | null;
+  backToFiles: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
   /** Files this chat's tool calls created or changed, newest first. */
@@ -174,6 +176,18 @@ export function FilesPanelProvider({ children }: { children: ReactNode }) {
     ),
   );
 
+  const folderIndex = history.entries.findLastIndex(
+    (entry, index) => index <= history.index && entry.kind === "folder",
+  );
+  const folderPath = history.entries[folderIndex]?.path ?? root;
+  const backToFiles = useCallback(
+    () =>
+      setHistory((previous) =>
+        previous.scope === scope ? { ...previous, index: folderIndex } : previous,
+      ),
+    [folderIndex, scope],
+  );
+
   const value = useMemo<FilesPanelContextValue>(
     () => ({
       root,
@@ -181,6 +195,8 @@ export function FilesPanelProvider({ children }: { children: ReactNode }) {
       expanded,
       width,
       location: history.entries[history.index] ?? null,
+      folderPath,
+      backToFiles,
       canGoBack: history.index >= 0,
       canGoForward: history.index < history.entries.length - 1,
       chatFiles,
@@ -199,6 +215,8 @@ export function FilesPanelProvider({ children }: { children: ReactNode }) {
       expanded,
       width,
       history,
+      folderPath,
+      backToFiles,
       chatFiles,
       setOpen,
       toggle,

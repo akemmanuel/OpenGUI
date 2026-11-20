@@ -4,15 +4,14 @@ import {
   CheckCircle2,
   Download,
   FileText,
-  GitFork,
   LoaderCircle,
   RefreshCw,
   Search,
-  ShieldCheck,
   Trash2,
   Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getProjectName } from "@/lib/path";
 import { useTranslation } from "react-i18next";
 import {
   AlertDialog,
@@ -230,21 +229,6 @@ export function SkillsSettings() {
       className="min-w-0 space-y-6 break-words [overflow-wrap:anywhere]"
       data-testid="skills-library"
     >
-      <section className="rounded-lg bg-muted/40 p-4">
-        <div className="flex gap-3">
-          <BookOpen className="mt-0.5 size-5 shrink-0 text-foreground" />
-          <div className="min-w-0 space-y-1">
-            <h3 className="text-sm font-semibold">{t("skillsSettings.aboutTitle")}</h3>
-            <p className="max-w-[70ch] text-sm leading-6 text-muted-foreground">
-              {t("skillsSettings.aboutDescription")}
-            </p>
-            <p className="max-w-[70ch] text-xs leading-5 text-muted-foreground">
-              {t("skillsSettings.sessionPins")}
-            </p>
-          </div>
-        </div>
-      </section>
-
       <Tabs defaultValue="installed" className="gap-5">
         <TabsList aria-label={t("skillsSettings.viewsLabel")}>
           <TabsTrigger value="installed">{t("skillsSettings.installed")}</TabsTrigger>
@@ -343,12 +327,6 @@ export function SkillsSettings() {
 
         {canManage && (
           <TabsContent value="discover" className="space-y-5">
-            <div className="space-y-1">
-              <h3 className="text-sm font-semibold">{t("skillsSettings.installTitle")}</h3>
-              <p className="max-w-[70ch] text-sm leading-6 text-muted-foreground">
-                {t("skillsSettings.installDescription")}
-              </p>
-            </div>
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">{t("skillsSettings.chooseScope")}</legend>
               <div className="grid gap-2 sm:grid-cols-2">
@@ -370,7 +348,11 @@ export function SkillsSettings() {
                         {t(`skillsSettings.scope.${scope}`)}
                       </span>
                       <span className="block text-xs leading-5 text-muted-foreground">
-                        {t(`skillsSettings.scopeHelp.${scope}`)}
+                        {scope === "project" && activeDirectory
+                          ? t("skillsSettings.projectScopeName", {
+                              project: getProjectName(activeDirectory),
+                            })
+                          : t(`skillsSettings.scopeHelp.${scope}`)}
                       </span>
                     </span>
                   </label>
@@ -431,18 +413,6 @@ export function SkillsSettings() {
                 {t("skillsSettings.sourceHelp")}
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <MetadataNote
-                icon={GitFork}
-                title={t("skillsSettings.githubOnlyTitle")}
-                text={t("skillsSettings.githubOnlyDescription")}
-              />
-              <MetadataNote
-                icon={ShieldCheck}
-                title={t("skillsSettings.trustTitle")}
-                text={t("skillsSettings.trustDescription")}
-              />
-            </div>
             {rows[`${installScope}:install`]?.status === "error" && (
               <OperationError
                 state={rows[`${installScope}:install`]!}
@@ -467,6 +437,15 @@ export function SkillsSettings() {
           </TabsContent>
         )}
       </Tabs>
+      <details className="border-t pt-4">
+        <summary className="w-fit cursor-pointer rounded text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+          {t("skillsSettings.aboutTitle")}
+        </summary>
+        <div className="mt-2 max-w-[70ch] space-y-1.5 text-sm leading-6 text-muted-foreground">
+          <p>{t("skillsSettings.aboutDescription")}</p>
+          <p>{t("skillsSettings.sessionPins")}</p>
+        </div>
+      </details>
 
       <AlertDialog
         open={Boolean(confirmation)}
@@ -510,26 +489,6 @@ function EmptyState({ text }: { text: string }) {
   return (
     <div className="rounded-lg bg-muted/40 px-4 py-8 text-center text-sm text-muted-foreground">
       {text}
-    </div>
-  );
-}
-
-function MetadataNote({
-  icon: Icon,
-  title,
-  text,
-}: {
-  icon: typeof GitFork;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="flex gap-3 rounded-lg border p-3">
-      <Icon className="mt-0.5 size-4 shrink-0" />
-      <div>
-        <p className="text-sm font-medium">{title}</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{text}</p>
-      </div>
     </div>
   );
 }

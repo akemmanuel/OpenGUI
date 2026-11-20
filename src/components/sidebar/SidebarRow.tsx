@@ -23,7 +23,7 @@ export function SidebarRow({
   className?: string;
 }) {
   const contentClassName = cn(
-    "flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-hidden transition-[background-color,color,box-shadow] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:p-2!",
+    "flex min-h-9 min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-hidden transition-[background-color,color,box-shadow] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:p-2!",
     active &&
       "bg-sidebar-accent font-medium text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_var(--sidebar-border)]",
     selected &&
@@ -44,6 +44,7 @@ export function SidebarRow({
         <button
           type="button"
           aria-label={label}
+          aria-current={active ? "true" : undefined}
           aria-selected={selected}
           className={contentClassName}
           onClick={onActivate}

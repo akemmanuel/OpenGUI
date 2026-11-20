@@ -85,16 +85,16 @@ export function ToolCallGroupView({
       <details
         open={expanded}
         onToggle={(event) => onSetToolCallExpanded?.(groupId, event.currentTarget.open)}
-        className="text-xs font-mono text-muted-foreground"
+        className="text-xs text-muted-foreground"
       >
-        <summary className="flex min-w-0 cursor-pointer list-none items-center gap-1.5 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <summary className="flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-1.5 rounded-sm pr-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
           <span className="flex size-3 shrink-0 items-center justify-center">
             {running ? <Spinner className="size-3" /> : <Check className="size-3" />}
           </span>
-          <span className="min-w-0 truncate font-medium text-foreground/70">{summary}</span>
+          <span className="min-w-0 truncate font-medium">{summary}</span>
           <ChevronRight
             className={cn(
-              "ml-auto size-3 shrink-0 transition-transform duration-150",
+              "size-3 shrink-0 transition-transform duration-150",
               expanded && "rotate-90",
             )}
           />

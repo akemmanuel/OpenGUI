@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 const fixture = vi.hoisted(() => ({
   workspace: {
@@ -98,6 +98,10 @@ const defaults = () => {
 };
 
 describe("SessionShareDialog", () => {
+  beforeAll(async () => {
+    // Keep the first module transform outside the dialog's UI assertions.
+    await import("./SessionShareDialogContent");
+  });
   beforeEach(() => {
     for (const method of Object.values(fixture.client)) method.mockReset();
     fixture.copy.mockReset();
@@ -188,6 +192,7 @@ describe("SessionShareDialog", () => {
       .mockResolvedValueOnce({ teams: [], users: [{ id: "new", name: "New principal" }] });
     render(<SessionShareDialog />);
     openSessionShareDialog("old", "Old");
+    await waitFor(() => expect(fixture.client.sharePrincipals).toHaveBeenCalledTimes(1));
     openSessionShareDialog("new", "New");
     expect(await screen.findByRole("option", { name: /New principal/ })).toBeTruthy();
     resolveOld({ teams: [], users: [{ id: "old", name: "Stale principal" }] });

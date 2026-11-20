@@ -229,7 +229,7 @@ async function fillLabel(label: string, value: string) {
 }
 
 async function fillPrompt(value: string) {
-  await find("placeholder", "Message...", "fill", value);
+  await browser("fill", "[data-slot=prompt-box-textarea]", value);
 }
 
 async function expectBrowserInvariant(label: string, expression: string) {
@@ -257,7 +257,7 @@ async function auditAccessibleResponsiveSurface(width: number, height: number) {
 }
 
 async function finishSetup(modelPort: number) {
-  await waitForText("Set up this Host", 45_000);
+  await waitForText("Create the owner account", 45_000);
   await fillLabel("Username", "acceptance_owner");
   await fillLabel("Email", "acceptance-owner@example.com");
   await fillLabel("Password", "acceptance-password");
@@ -265,42 +265,54 @@ async function finishSetup(modelPort: number) {
   await clickButton("Create owner account");
 
   await waitForText("Connect a model");
+  await clickButton("Choose a provider");
+  await waitForText("Connect a provider");
+  await clickButton("Back to setup");
+  await waitForText("Connect a model");
+  await clickButton("Custom endpoint");
   await fillLabel("Base URL", `http://127.0.0.1:${modelPort}/v1`);
-  await fillLabel("API key", "fixture-key");
+  await fillLabel("API key (if required)", "fixture-key");
   await fillLabel("Model", "fixture-model");
   await clickButton("Continue");
 
-  await waitForText("Choose where new chats start");
+  await waitForText("Choose a project folder");
+  await browser("set", "viewport", "390", "844");
   await clickButton("Browse");
-  await waitForText("Open Project");
+  await browser("wait", "--text", "Use this folder");
+  await browser("click", 'button[title="Edit current path"]');
+  await fillLabel("Project path", join(projectDirectory, "missing-folder"));
+  await clickButton("Use this folder");
+  await waitForText("This folder is unavailable.");
   await browser(
     "wait",
     "--fn",
-    "Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.trim() === 'Open project' && !button.disabled)",
+    `(() => {
+    const field = document.querySelector('input[aria-label="Project path"][aria-invalid="true"]');
+    return document.getElementById(field?.getAttribute('aria-describedby') ?? '')?.textContent === 'This folder is unavailable.';
+  })()`,
   );
-  await clickButton("Open project");
+  await fillLabel("Project path", join(projectDirectory, "documents"));
+  await clickButton("Use this folder");
   await browser(
     "wait",
     "--fn",
-    "!Array.from(document.querySelectorAll('h1,h2,[role=heading]')).some((heading) => heading.textContent?.trim() === 'Open Project')",
+    `document.querySelector('#setup-chat-folder')?.value === ${JSON.stringify(join(projectDirectory, "documents"))}`,
   );
-  await delay(300);
+  await fillLabel("Project folder (optional)", projectDirectory);
+  await clickButton("Browse");
+  await clickButton("Use this folder");
+  await browser(
+    "wait",
+    "--fn",
+    "document.querySelectorAll('[data-slot=dialog-content]').length === 1",
+  );
   await clickButton("Continue");
+  await browser("set", "viewport", "1440", "900");
   await waitForText("You're ready");
-  await clickButton("Open OpenGUI");
-}
-
-async function connectProject() {
-  await clickButton("Add project");
-  await waitForText("Open Project");
-  await browser(
-    "wait",
-    "--fn",
-    "Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.trim() === 'Open project' && !button.disabled)",
-  );
   await clickButton("Open project");
   await browser("wait", "--fn", "!document.querySelector('[data-slot=dialog-content]')");
   await waitForText("project");
+
   const content = await body();
   if (!content.includes("fixture-model")) {
     await clickButton("Choose model");
@@ -327,13 +339,10 @@ async function reloadAndReopenSession() {
 }
 
 async function runJourneys(frontendUrl: string, modelPort: number) {
-  log("first launch, fresh owner identity, model setup, and Host folder selection");
+  log("first launch, owner identity, model setup, and opening the first project");
   await browser("open", frontendUrl);
   await browser("set", "viewport", "1440", "900");
   await finishSetup(modelPort);
-
-  log("connect Project and create the first Session");
-  await connectProject();
 
   log("stream reasoning, text, and a real read tool call through the fake provider");
   await sendAndWait("Tool journey: read the fixture", "Tool result observed:");
@@ -344,8 +353,13 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   await browser("wait", 'button[aria-label="Preview notes.txt:2"]');
   await clickButton("Preview notes.txt:2");
   await browser("wait", "--fn", "Boolean(document.querySelector('aside pre code'))");
+  await browser(
+    "wait",
+    "--fn",
+    "document.querySelector('aside [role=region] [role=status]')?.textContent === 'Linked line 2'",
+  );
   await browser("screenshot", join(tmpdir(), "opengui-files-panel-text.png"));
-  await clickButton("Back");
+  await clickButton("Previous file or folder");
   await browser("fill", "input[type=search]", "report");
   await waitForText("report.csv");
   await browser("wait", 'aside button[title="documents/report.csv"]');
@@ -355,10 +369,10 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
     "--fn",
     "document.querySelector('aside table')?.textContent?.includes('Berlin')",
   );
-  await clickButton("Back");
+  await clickButton("Previous file or folder");
   await browser("fill", "input[type=search]", "page.html");
-  await waitForText("1 result in project");
-  await browser("click", 'aside button[title="page.html"]');
+  await waitForText("page.html");
+  await browser("find", "role", "button", "click", "--name", "page.html");
   await browser(
     "wait",
     "--fn",
@@ -370,16 +384,26 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
     "--fn",
     "document.querySelector('aside pre code')?.textContent?.includes('Preview fixture')",
   );
-  await clickButton("Back");
+  await clickButton("Previous file or folder");
   await browser("fill", "input[type=search]", "document.pdf");
-  await waitForText("1 result in project");
-  await browser("click", 'aside button[title="document.pdf"]');
+  await waitForText("document.pdf");
+  await browser("find", "role", "button", "click", "--name", "document.pdf");
   await browser(
     "wait",
     "--fn",
     "Array.from(document.querySelectorAll('aside canvas')).some(canvas => canvas.width > 0)",
   );
+  await browser(
+    "wait",
+    "--fn",
+    "document.querySelector('aside .pdf-text-layer span')?.textContent.includes('File preview PDF')",
+  );
   await browser("screenshot", join(tmpdir(), "opengui-files-panel-pdf.png"));
+  await clickButton("Zoom in");
+  await browser("focus", '[aria-label="PDF preview"]');
+  await browser("press", "ArrowRight");
+  await browser("wait", "--fn", "(document.activeElement?.scrollLeft ?? 0) > 0");
+  await clickButton("Fit width");
   await browser("set", "viewport", "390", "844");
   await browser(
     "wait",
@@ -387,7 +411,10 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
     "Boolean(document.querySelector('[data-slot=sheet-content] canvas'))",
   );
   await browser("screenshot", join(tmpdir(), "opengui-files-panel-mobile.png"));
+  await clickButton("More file actions");
+  await find("role", "menuitem", "hover", "Download");
   await browser("press", "Escape");
+  await clickButton("Back to chat");
   await browser("wait", "--fn", "!document.querySelector('[data-slot=sheet-content]')");
   await browser("set", "viewport", "1440", "900");
 
@@ -437,12 +464,9 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   await delay(100);
   await clickSnapshotControl("Move to bottom");
   await find("text", "queued third", "hover", undefined);
-  await browser("click", "button[aria-label='Send now']");
+  await browser("click", "button[aria-label='Stop current run and send']");
   await waitForText("Slow stream", 10_000);
-  await browser(
-    "eval",
-    "document.querySelector(\"button[title='Stop'],button[aria-label='Stop']\")?.click(); true",
-  );
+  await clickButton("Stop run");
   await delay(500);
   await expectText("queued prompt edited");
 

@@ -42,11 +42,7 @@ import { NamedTeamsSettings } from "@/features/identity/NamedTeamsSettings";
 import { TeamSettings } from "@/features/identity/TeamSettings";
 import { SkillsSettings } from "@/features/skills/SkillsSettings";
 import { CodexToolsSettings } from "@/features/codex-tools/CodexToolsSettings";
-import {
-  PersonalInstructions,
-  usePersonalInstructionsAvailable,
-  InstructionsSettings,
-} from "@/features/instructions/InstructionsSettings";
+import { InstructionsSettings } from "@/features/instructions/InstructionsSettings";
 import { McpSettings } from "@/features/mcp/McpSettings";
 import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { ownerSettingsVisibility } from "@/features/identity/identity-state";
@@ -81,12 +77,16 @@ type Group = { id: "personal" | "agent" | "host" | "device"; sections: Section[]
 export function SettingsView({
   onBack,
   initialTab,
+  showModelConnections,
+  backToSetup,
 }: {
   onBack: () => void;
   initialTab?: SectionId;
+  showModelConnections?: boolean;
+  backToSetup?: boolean;
 }) {
   const { t } = useTranslation();
-  const showPersonalInstructions = usePersonalInstructionsAvailable();
+  const backLabel = t("settings.backToChat");
   const [requestedTab, setActiveTab] = useState<SectionId | null>(initialTab ?? "models");
   const [dirty, setDirty] = useState(false);
   const [pendingTab, setPendingTab] = useState<SectionId | "back" | null>(null);
@@ -162,6 +162,20 @@ export function SettingsView({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  if (backToSetup) {
+    return (
+      <section className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="mx-auto w-full max-w-2xl space-y-6 px-5 py-5 sm:px-8 sm:py-8">
+          <Button variant="ghost" size="lg" onClick={onBack}>
+            <ArrowLeft />
+            {t("settings.backToSetup")}
+          </Button>
+          <SettingsProviders setupMode />
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       <AlertDialog
@@ -193,52 +207,51 @@ export function SettingsView({
 
       <nav
         aria-label={t("settings.navigationLabel")}
-        className="flex shrink-0 flex-col border-b bg-muted/20 md:w-60 md:border-r md:border-b-0"
+        className="flex shrink-0 flex-col border-b bg-sidebar md:w-64 md:border-r md:border-b-0"
       >
-        <div className="flex items-center gap-2 px-3 py-3 md:px-4 md:pt-5">
+        <div className="flex items-center gap-2 px-3 py-3 md:gap-3 md:px-4 md:pt-5 md:pb-4">
           <Button
             type="button"
             variant="ghost"
             size="icon"
             onClick={() => navigate("back")}
-            aria-label={t("settings.backToChat")}
-            title={t("settings.backToChat")}
-            className="text-muted-foreground"
+            aria-label={backLabel}
+            title={backLabel}
+            className="size-10 text-muted-foreground"
           >
             <ArrowLeft />
           </Button>
-          <h1 className="text-lg font-semibold tracking-tight">{t("common.settings")}</h1>
-        </div>
-
-        <div className="px-3 pb-3 md:hidden">
-          <Select value={activeTab} onValueChange={(value) => navigate(value as SectionId)}>
-            <SelectTrigger
-              id="settings-section"
-              aria-label={t("settings.navigationLabel")}
-              className="h-10 w-full"
-            >
-              <SelectValue>{t(`settings.tabs.${activeTab}`)}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {groups.map((group) => (
-                <SelectGroup key={group.id}>
-                  <SelectLabel>{t(`settings.groups.${group.id}`)}</SelectLabel>
-                  {group.sections.map((section) => (
-                    <SelectItem key={section.id} value={section.id}>
-                      {t(`settings.tabs.${section.id}`)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
+          <h1 className="mr-auto text-lg font-semibold tracking-tight">{t("common.settings")}</h1>
+          <div className="min-w-0 md:hidden">
+            <Select value={activeTab} onValueChange={(value) => navigate(value as SectionId)}>
+              <SelectTrigger
+                id="settings-section"
+                aria-label={t("settings.navigationLabel")}
+                className="h-10 w-auto max-w-[48vw] gap-2 bg-card"
+              >
+                <SelectValue>{t(`settings.tabs.${activeTab}`)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((group) => (
+                  <SelectGroup key={group.id}>
+                    <SelectLabel>{t(`settings.groups.${group.id}`)}</SelectLabel>
+                    {group.sections.map((section) => (
+                      <SelectItem key={section.id} value={section.id} className="min-h-10">
+                        {t(`settings.tabs.${section.id}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="hidden min-h-0 flex-1 overflow-y-auto px-3 pb-4 md:block">
           {groups.map((group) => (
-            <div key={group.id} className="mt-4 first:mt-1">
+            <div key={group.id} className="mt-5 first:mt-0">
               {groups.length > 1 && (
-                <h2 className="px-2 pb-1 text-xs font-medium text-muted-foreground">
+                <h2 className="px-2.5 pb-1.5 text-xs font-semibold text-muted-foreground">
                   {t(`settings.groups.${group.id}`)}
                 </h2>
               )}
@@ -252,15 +265,15 @@ export function SettingsView({
                         variant="ghost"
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "w-full justify-start gap-2.5 px-2 font-normal",
+                          "min-h-9 w-full justify-start gap-2.5 px-2.5 text-left font-medium",
                           active
-                            ? "bg-accent font-medium text-accent-foreground hover:bg-accent"
+                            ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground hover:bg-sidebar-accent"
                             : "text-muted-foreground",
                         )}
                         onClick={() => navigate(section.id)}
                       >
                         <section.icon
-                          className={cn(active ? "text-foreground" : "")}
+                          className={active ? "text-primary" : undefined}
                           aria-hidden="true"
                         />
                         {t(`settings.tabs.${section.id}`)}
@@ -278,19 +291,26 @@ export function SettingsView({
       </nav>
 
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-8 md:py-10">
-          <header className="mb-8 space-y-1.5 [overflow-wrap:anywhere]">
-            <h2 className="text-2xl font-semibold tracking-tight">
+        <div className="mx-auto w-full max-w-4xl px-5 py-6 sm:px-9 md:py-10 xl:px-12">
+          <header className="mb-6 space-y-2.5 border-b pb-5 wrap-anywhere md:mb-8 md:pb-6">
+            <h2 className="text-2xl leading-tight font-semibold tracking-tight md:text-[2rem]">
               {t(`settings.tabs.${activeTab}`)}
             </h2>
-            <p className="max-w-[65ch] text-sm leading-6 text-muted-foreground">
-              {t(`settings.sectionDescriptions.${activeTab}`)}
-            </p>
+            {activeTab !== "models" && activeTab !== "instructions" && (
+              <p className="max-w-[65ch] text-sm leading-6 text-muted-foreground">
+                {t(`settings.sectionDescriptions.${activeTab}`)}
+              </p>
+            )}
           </header>
           {activeTab === "appearance" && <AppearanceSettings />}
           {activeTab === "language" && <LanguageOptions />}
           {activeTab === "chats" && <ChatPreferences />}
-          {activeTab === "models" && <SettingsProviders onDirtyChange={setDirty} />}
+          {activeTab === "models" && (
+            <SettingsProviders
+              onDirtyChange={setDirty}
+              initialShowConnections={showModelConnections}
+            />
+          )}
           {activeTab === "integrations" && (
             <div className="space-y-8">
               <CodexToolsSettings />
@@ -300,17 +320,7 @@ export function SettingsView({
             </div>
           )}
           {activeTab === "skills" && <SkillsSettings />}
-          {activeTab === "instructions" && (
-            <div className="space-y-8">
-              <InstructionsSettings />
-              {showPersonalInstructions && (
-                <section className="space-y-4 border-t pt-6">
-                  <h3 className="font-medium">{t("profile.personalInstructions")}</h3>
-                  <PersonalInstructions onDirty={setDirty} />
-                </section>
-              )}
-            </div>
-          )}
+          {activeTab === "instructions" && <InstructionsSettings onDirtyChange={setDirty} />}
           {activeTab === "users" && <TeamSettings view="people" />}
           {activeTab === "teams" && <NamedTeamsSettings onDirtyChange={setDirty} />}
           {activeTab === "paths" && (

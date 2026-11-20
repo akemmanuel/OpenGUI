@@ -1,4 +1,4 @@
-import { Search, X } from "lucide-react";
+import { ChevronRight, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -60,14 +60,14 @@ function Row({
       <FileContextMenu path={path} folder={folder} onOpen={onOpen}>
         <button
           type="button"
-          className="flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md px-2.5 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+          className="flex min-h-9 w-full max-md:min-h-11 min-w-0 items-center gap-2.5 rounded-md px-2.5 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
           title={detail ? `${detail}/${name}` : name}
           onClick={onOpen}
         >
           <FileIcon name={name} folder={folder} />
-          <span className="min-w-0 flex-1 truncate">
-            {name}
-            {detail ? <span className="text-xs text-muted-foreground"> {detail}</span> : null}
+          <span className="flex min-w-0 flex-1 flex-col py-1 leading-tight">
+            <span className="truncate font-medium">{name}</span>
+            {detail && <span className="truncate text-xs text-muted-foreground">{detail}</span>}
           </span>
           <ChangeDot change={change} />
           {trailing !== undefined && (
@@ -75,6 +75,7 @@ function Row({
               {trailing}
             </span>
           )}
+          <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground md:hidden" />
         </button>
       </FileContextMenu>
     </li>
@@ -241,7 +242,11 @@ export function FolderView({
                 name={entry.name}
                 folder={entry.type === "dir"}
                 change={changes.get(pathKey(entry.path))}
-                trailing={entry.modifiedAt ? formatFileDate(entry.modifiedAt, i18n.language) : ""}
+                trailing={
+                  entry.type === "file" && entry.modifiedAt
+                    ? formatFileDate(entry.modifiedAt, i18n.language)
+                    : undefined
+                }
                 onOpen={() =>
                   onNavigate(
                     entry.type === "dir"
@@ -260,7 +265,7 @@ export function FolderView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="px-2.5 pt-2 pb-1">
-        <div className="flex h-8 items-center gap-2 rounded-md border border-input bg-background/60 px-2.5 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
+        <div className="flex h-12 items-center gap-2 rounded-md border border-input bg-background/60 pl-2.5 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 md:h-9">
           <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={searchRef}
@@ -275,12 +280,12 @@ export function FolderView({
             }}
             placeholder={t("filesPanel.search")}
             aria-label={t("filesPanel.search")}
-            className="min-w-0 flex-1 bg-transparent text-base md:text-sm outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+            className="min-w-0 flex-1 bg-transparent pr-2 text-base md:text-sm outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
           />
           {query && (
             <button
               type="button"
-              className="rounded-sm text-muted-foreground hover:text-foreground"
+              className="flex h-full w-11 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring md:w-8"
               aria-label={t("filesPanel.clearSearch")}
               onClick={() => {
                 setQuery("");
@@ -296,9 +301,11 @@ export function FolderView({
       {status && (
         <div className="flex shrink-0 justify-between gap-3 border-t border-border px-3.5 py-1.5 text-xs text-muted-foreground">
           <span>{status}</span>
-          <span className="truncate" title={path}>
-            {path}
-          </span>
+          {!isRoot && (
+            <span className="truncate" title={path}>
+              {relativeHostPath(root, path) || hostBasename(root)}
+            </span>
+          )}
         </div>
       )}
     </div>

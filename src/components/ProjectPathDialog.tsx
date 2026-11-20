@@ -1,5 +1,5 @@
-import { ChevronLeft, Folder, FolderOpen, Pencil, Search, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronLeft, Folder, FolderOpen, Pencil, Search, X } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { notifyUnknownError } from "@/lib/notify";
 import { useTranslation } from "react-i18next";
 import { i18n } from "@/i18n";
@@ -8,20 +8,24 @@ import { Button } from "@/components/ui/button";
 import { useWorkspaceState } from "@/hooks/use-agent-state";
 import { canManageProjects as resolveCanManageProjects } from "@/hooks/workspace-guards";
 import { notifyInfo } from "@/lib/notify";
-import { normalizeProjectPath } from "@/lib/path";
+import { getProjectName, normalizeProjectPath } from "@/lib/path";
 import { useDesktopShell } from "@/shell/provider";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 
 interface OpenProjectPathDialogDetail {
   resolve: (value: string | null) => void;
   initialPath?: string;
+  purpose?: "project" | "default";
 }
 
-export function requestProjectPath(initialPath?: string) {
+export function requestProjectPath(
+  initialPath?: string,
+  purpose?: OpenProjectPathDialogDetail["purpose"],
+) {
   return new Promise<string | null>((resolve) => {
     window.dispatchEvent(
       new CustomEvent("opengui:open-project-path-dialog", {
-        detail: { resolve, initialPath } satisfies OpenProjectPathDialogDetail,
+        detail: { resolve, initialPath, purpose } satisfies OpenProjectPathDialogDetail,
       }),
     );
   });
@@ -77,18 +81,23 @@ export function ProjectPathDialog() {
   } = useWorkspaceState();
   const shell = useDesktopShell();
   const [open, setOpen] = useState(false);
+  const [purpose, setPurpose] = useState<OpenProjectPathDialogDetail["purpose"]>();
   const [value, setValue] = useState("");
   const [serverListing, setServerListing] = useState<ServerDirectoryListing | null>(null);
   const [serverBrowserLoading, setServerBrowserLoading] = useState(false);
   const [folderSearch, setFolderSearch] = useState("");
   const [pathEditing, setPathEditing] = useState(false);
   const [pathDraft, setPathDraft] = useState("");
+  const [pathError, setPathError] = useState(false);
+  const pathErrorId = useId();
+  const searchRef = useRef<HTMLInputElement>(null);
   const resolverRef = useRef<((value: string | null) => void) | null>(null);
   const serverBrowseInitialPathRef = useRef<string | undefined>(undefined);
   const useServerBrowser = !supportsNativeDirectoryPicker;
 
   const loadServerDirectory = useCallback(
-    async (path?: string) => {
+    async (path?: string, reportError = true) => {
+      const resolve = resolverRef.current;
       setServerBrowserLoading(true);
       try {
         const params = new URLSearchParams();
@@ -117,12 +126,15 @@ export function ProjectPathDialog() {
         }
         if (!response.ok || !body?.ok || !body.value)
           throw new Error(body?.error || "Failed to list server folders");
+        if (resolverRef.current !== resolve) return null;
         setServerListing(body.value);
         setValue(body.value.path);
+        return body.value.path;
       } catch (error) {
-        notifyUnknownError(error);
+        if (reportError && resolverRef.current === resolve) notifyUnknownError(error);
+        return null;
       } finally {
-        setServerBrowserLoading(false);
+        if (resolverRef.current === resolve) setServerBrowserLoading(false);
       }
     },
     [activeWorkspace?.authToken, workspaceServerUrl],
@@ -138,13 +150,16 @@ export function ProjectPathDialog() {
       }
       resolverRef.current?.(null);
       resolverRef.current = customEvent.detail.resolve;
+      setPurpose(customEvent.detail.purpose);
       const initial = customEvent.detail.initialPath ?? workspaceDirectory ?? "";
       setValue(initial);
       const trimmed = initial.trim();
       serverBrowseInitialPathRef.current = trimmed || undefined;
       setServerListing(null);
+      setServerBrowserLoading(false);
       setFolderSearch("");
       setPathEditing(false);
+      setPathError(false);
       setOpen(true);
     };
 
@@ -166,6 +181,7 @@ export function ProjectPathDialog() {
     resolverRef.current?.(normalizedValue);
     resolverRef.current = null;
     setServerListing(null);
+    setServerBrowserLoading(false);
     setOpen(false);
   };
 
@@ -176,6 +192,21 @@ export function ProjectPathDialog() {
     void loadServerDirectory(path);
   };
 
+  async function applyManualPath(confirm: boolean) {
+    const resolve = resolverRef.current;
+    const path = pathDraft.trim();
+    if (!path || serverBrowserLoading) return;
+    const validated = await loadServerDirectory(path, false);
+    if (resolverRef.current !== resolve) return;
+    if (!validated) {
+      setPathError(true);
+      return;
+    }
+    setPathEditing(false);
+    setFolderSearch("");
+    if (confirm) closeWith(validated);
+  }
+
   const visibleEntries = serverListing?.entries.filter((entry) =>
     entry.name.toLocaleLowerCase().includes(folderSearch.trim().toLocaleLowerCase()),
   );
@@ -185,6 +216,13 @@ export function ProjectPathDialog() {
     if (nextPath) setValue(nextPath);
   };
 
+  const defaultFolder = purpose === "default";
+  const confirmationLabel = t(defaultFolder ? "projectPath.useFolder" : "projectPath.openProject");
+  const selectedPath = pathEditing ? pathDraft.trim() : value.trim();
+  const relativeParts = normalizeProjectPath(selectedPath).split("/").filter(Boolean);
+  const confirmPath =
+    relativeParts.length > 2 ? `…/${relativeParts.slice(-2).join("/")}` : selectedPath;
+
   return (
     <DialogShell
       open={open}
@@ -193,20 +231,49 @@ export function ProjectPathDialog() {
       }}
       className={
         useServerBrowser
-          ? "h-[min(42rem,calc(100dvh-1rem))] max-w-[calc(100vw-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden p-4 sm:max-w-2xl"
+          ? "h-[min(34rem,calc(100dvh-1rem))] max-w-[calc(100vw-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden p-4 sm:max-w-2xl"
           : "max-w-[calc(100vw-1rem)] gap-3 p-4 sm:max-w-2xl"
       }
-      title={t("projectPath.title")}
+      title={t(defaultFolder ? "projectPath.defaultTitle" : "projectPath.title")}
       bodyClassName="flex min-h-0 flex-col"
       footerClassName="-mx-4 -mb-4 p-3"
       footer={
         <>
+          {(!useServerBrowser || pathEditing) && selectedPath && (
+            <div className="mr-auto w-full min-w-0 font-mono text-xs font-medium text-foreground max-sm:order-last sm:w-auto sm:flex-1">
+              {relativeParts.length > 2 ? (
+                <details>
+                  <summary
+                    className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded focus-visible:outline-2 focus-visible:outline-ring sm:min-h-8"
+                    title={selectedPath}
+                  >
+                    <span
+                      className="min-w-0 truncate [direction:rtl] [text-align:left]"
+                      data-responsive-allow="text-clip"
+                    >
+                      <bdi dir="ltr">{confirmPath}</bdi>
+                    </span>
+                    <ChevronDown className="size-3 shrink-0" aria-hidden />
+                  </summary>
+                  <p className="mt-1.5 max-h-[min(5rem,18dvh)] overflow-y-auto break-all text-muted-foreground">
+                    {selectedPath}
+                  </p>
+                </details>
+              ) : (
+                confirmPath
+              )}
+            </div>
+          )}
           <Button type="button" variant="ghost" onClick={() => closeWith(null)}>
             {t("common.cancel")}
           </Button>
           {useServerBrowser ? (
-            <Button type="button" disabled={!value.trim()} onClick={() => closeWith(value)}>
-              {t("projectPath.openProject")}
+            <Button
+              type="button"
+              disabled={!selectedPath || serverBrowserLoading}
+              onClick={() => (pathEditing ? void applyManualPath(true) : closeWith(selectedPath))}
+            >
+              {confirmationLabel}
             </Button>
           ) : (
             <>
@@ -214,8 +281,12 @@ export function ProjectPathDialog() {
                 <FolderOpen className="size-4" />
                 {t("common.browse")}
               </Button>
-              <Button type="button" disabled={!value.trim()} onClick={() => closeWith(value)}>
-                {t("projectPath.openProject")}
+              <Button
+                type="button"
+                disabled={!value.trim() || serverBrowserLoading}
+                onClick={() => closeWith(value)}
+              >
+                {confirmationLabel}
               </Button>
             </>
           )}
@@ -226,25 +297,33 @@ export function ProjectPathDialog() {
         <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-background/40 p-2">
           <div className="mb-2 flex min-w-0 items-center gap-2 border-b pb-2">
             {pathEditing ? (
-              <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1">
+              <div className="flex min-w-0 flex-1 flex-col gap-1 rounded px-1 py-1 focus-within:ring-2 focus-within:ring-ring">
+                <span className="truncate text-xs font-medium" title={serverListing?.path}>
+                  {getProjectName(serverListing?.path ?? "", "")}
+                </span>
                 <input
                   aria-label={t("projectPath.projectPathLabel")}
+                  aria-invalid={pathError}
+                  aria-describedby={pathError ? pathErrorId : undefined}
                   className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-sm outline-none"
                   value={pathDraft}
-                  onChange={(event) => setPathDraft(event.target.value)}
-                  onBlur={() => setPathEditing(false)}
+                  readOnly={serverBrowserLoading}
+                  onChange={(event) => {
+                    setPathDraft(event.target.value);
+                    setPathError(false);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && pathDraft.trim()) {
                       event.preventDefault();
-                      selectServerDirectory(pathDraft.trim());
-                    } else if (event.key === "Escape") {
+                      void applyManualPath(false);
+                    } else if (event.key === "Escape" && !serverBrowserLoading) {
+                      event.stopPropagation();
                       setPathEditing(false);
                     }
                   }}
                   autoComplete="off"
                   autoFocus
                 />
-                <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
               </div>
             ) : serverListing?.path ? (
               <button
@@ -252,12 +331,24 @@ export function ProjectPathDialog() {
                 className="group flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => {
                   setPathDraft(serverListing.path);
+                  setPathError(false);
                   setPathEditing(true);
                 }}
                 title={t("projectPath.editPath")}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-sm">
-                  {serverListing.path}
+                <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                  <FolderOpen className="size-5 shrink-0 text-primary" aria-hidden="true" />
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate text-sm font-semibold" title={serverListing.path}>
+                      {getProjectName(serverListing.path, serverListing.path)}
+                    </span>
+                    <span
+                      className="truncate font-mono text-xs text-muted-foreground"
+                      title={serverListing.path}
+                    >
+                      {serverListing.path}
+                    </span>
+                  </span>
                 </span>
                 <Pencil className="size-3.5 shrink-0 text-muted-foreground opacity-60 group-hover:opacity-100" />
               </button>
@@ -278,21 +369,30 @@ export function ProjectPathDialog() {
               <span className="max-sm:sr-only">{t("projectPath.up")}</span>
             </Button>
           </div>
+          {pathEditing && pathError && (
+            <p id={pathErrorId} role="alert" className="mb-2 px-1 text-xs text-destructive">
+              {t("projectPath.unavailableFolder")}
+            </p>
+          )}
           <label className="relative mb-1.5 block">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <span className="sr-only">{t("projectPath.searchFolders")}</span>
             <input
+              ref={searchRef}
               type="search"
               value={folderSearch}
               onChange={(event) => setFolderSearch(event.target.value)}
               placeholder={t("projectPath.searchFolders")}
-              className="h-9 w-full rounded-md border bg-background pr-9 pl-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/25 [&::-webkit-search-cancel-button]:appearance-none"
+              className="h-12 w-full rounded-md border bg-background pr-12 pl-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/25 md:h-9 md:pr-9 [&::-webkit-search-cancel-button]:appearance-none"
             />
             {folderSearch && (
               <button
                 type="button"
-                onClick={() => setFolderSearch("")}
-                className="absolute top-1/2 right-1.5 flex size-7 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  setFolderSearch("");
+                  searchRef.current?.focus();
+                }}
+                className="absolute top-1/2 right-0.5 flex size-11 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:right-1.5 md:size-7"
                 aria-label={t("projectPath.clearSearch")}
               >
                 <X className="size-4" />

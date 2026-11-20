@@ -63,7 +63,9 @@
     "discardTitle": "Discard unsaved changes?",
     "discardHelp": "Your changes have not been saved.",
     "keepEditing": "Keep editing",
-    "discard": "Discard changes"
+    "discard": "Discard changes",
+    "manageFolders": "Edit folder grants",
+    "noFolders": "No folders granted directly to this account."
   },
   "teams": {
     "search": "Search teams",
@@ -199,7 +201,7 @@
       "users": "Invite people and manage their Host roles.",
       "paths": "Choose which folders people can read and change through OpenGUI.",
       "host": "Host-wide restrictions, registration, and automation keys.",
-      "instructions": "House rules the agent follows on this Host and in shared projects. Your personal preferences live in your profile in the sidebar.",
+      "instructions": "Set the instructions the agent follows for you, a project, or the entire Host.",
       "skills": "Reusable instructions available to the agent.",
       "teams": "Group people and manage their access together.",
       "desktop": "Where new chats start and which apps open files and terminals on this computer.",
@@ -235,7 +237,12 @@
       "save": "Save instructions",
       "saved": "Custom instructions saved",
       "loadFailed": "Could not load custom instructions.",
-      "characterCount": "{{count}} / {{max}} characters"
+      "characterCount": "{{count}} / {{max}} characters",
+      "saveScope": {
+        "host": "Save Host instructions",
+        "project": "Save project instructions",
+        "personal": "Save personal instructions"
+      }
     },
     "general": {
       "chatWidth": "Chat width",
@@ -258,7 +265,7 @@
       "language": "Language",
       "defaultChatDirectory": "Default chat directory",
       "defaultChatDirectoryHelp": "New chats start in this working directory.",
-      "newChatModelBehavior": "LLM model for new chats",
+      "newChatModelBehavior": "Default model for new chats",
       "newChatModelAsk": "Choose every time",
       "newChatModelLast": "Use last LLM model",
       "newChatModelWorkspaceDefault": "Use workspace default",
@@ -279,7 +286,8 @@
       "theme": "Theme",
       "olderThan": "Older than",
       "blockedByBrowserHelp": "Allow notifications for this site in your browser settings to turn them on.",
-      "fontSize": "Font size"
+      "fontSize": "Font size",
+      "maintenance": "Local Host maintenance"
     },
     "groups": {
       "agent": "Agent",
@@ -288,6 +296,7 @@
       "personal": "Personal"
     },
     "backToChat": "Back to chat",
+    "backToSetup": "Back to setup",
     "version": "OpenGUI {{version}}",
     "codexTools": {
       "title": "ChatGPT tools",
@@ -324,7 +333,7 @@
     "pinned": "Pinned",
     "projects": "Projects",
     "addProject": "Add project",
-    "searchPlaceholder": "Search projects and sessions...",
+    "searchPlaceholder": "Search chats and projects",
     "showLess": "Show less",
     "title": "Sidebar",
     "mobileDescription": "Displays the mobile sidebar.",
@@ -392,10 +401,13 @@
     "steerTitle": "Steer: wait for the current model part to finish, then send (Ctrl/Cmd+D to toggle)",
     "queue": "Queue",
     "steer": "Steer",
-    "stop": "Stop",
-    "stopGenerating": "Stop generating",
+    "stop": "Stop run",
+    "stopGenerating": "Stop current run",
+    "stopCompact": "Stop",
     "send": "Send",
-    "sendMessage": "Send message"
+    "sendMessage": "Send message",
+    "firstMessage": "Ask about this project…",
+    "modelRequired": "A model is required to send messages."
   },
   "reasoningEffort": {
     "label": "Reasoning effort",
@@ -409,14 +421,19 @@
       "xhigh": "Extra high",
       "max": "Maximum",
       "ultra": "Ultra"
-    }
+    },
+    "compactTitle": "Reasoning: {{effort}}"
   },
   "modelSelector": {
     "dialogTitle": "Choose model",
     "searchPlaceholder": "Search provider, model, or id...",
     "recent": "Recent",
     "noModelsAvailable": "No models are available.",
-    "noModelsMatch": "No models match \"{{query}}\"."
+    "noModelsMatch": "No models match \"{{query}}\".",
+    "connectModelHelp": "Connect a provider in Settings before sending your first message.",
+    "askHostHelp": "Ask the Host owner to share a model with your account.",
+    "openModelSettings": "Open model settings",
+    "setupModel": "Set up a model"
   },
   "compaction": {
     "inProgress": "Preparing a context handoff…",
@@ -484,8 +501,8 @@
   },
   "identity": {
     "checkingHost": "Checking Host identity",
-    "setupTitle": "Set up this Host",
-    "setupDescription": "Create the first account for {{host}}. This account will own the Host and its settings.",
+    "setupTitle": "Create the owner account",
+    "setupDescription": "The owner manages models, projects, and access on this Host.",
     "loginTitle": "Sign in to OpenGUI",
     "loginDescription": "Enter your account details to use {{host}}.",
     "registerTitle": "Create an account",
@@ -521,7 +538,7 @@
     "accountSession": "Host account",
     "signOut": "Sign out",
     "signingOut": "Signing out…",
-    "hostLabel": "Connecting to {{host}}",
+    "hostLabel": "Host {{host}}",
     "unavailableTitle": "Host unavailable",
     "unavailableDescription": "OpenGUI could not check the identity status of {{host}}.",
     "connectionError": "Could not connect to the Host.",
@@ -748,17 +765,17 @@
     "directory": {
       "connectedTitle": "Connected providers",
       "connectedEmpty": "No providers connected yet. Add one below.",
-      "addTitle": "Add a provider",
-      "addHelp": "Sign in with a subscription or paste an API key. Models appear as soon as the provider is connected.",
+      "addTitle": "Connect a provider",
       "signIn": "Sign in",
-      "signInNamed": "Sign in to {{name}}",
+      "actionNamed": "{{action}} for {{name}}",
       "subscription": "Use subscription",
+      "claudeCodeSignIn": "Use Claude Code",
       "apiKey": "API key",
       "apiKeyOrFree": "API key or free",
-      "apiKeyNamed": "Add an API key for {{name}}",
       "authOAuth": "Signed in",
       "authApiKey": "API key",
-      "freeTierHint": "Leave blank to use OpenCode Zen's free models without an account."
+      "freeTierHint": "Leave blank to use OpenCode Zen's free models without an account.",
+      "showAll": "Show all {{count}} providers"
     },
     "login": {
       "title": "Connect {{name}}",
@@ -844,8 +861,8 @@
     "credentialsConcept": "BYOK & BYOS",
     "credentialsConceptHelp": "BYOK uses an API key; BYOS connects an eligible subscription. Both remain private credentials.",
     "offeringsTitle": "Model offerings",
-    "offeringsHelp": "Publish a stable name and slug for one model, then grant it to everyone or selected users.",
-    "noOfferings": "No model offerings yet. Create one to give members a clear model menu.",
+    "offeringsHelp": "Add a named model, then use Manage access to share it.",
+    "noOfferings": "No models added yet.",
     "offeringNamePlaceholder": "Display name, e.g. Company Model",
     "offeringSlugPlaceholder": "slug, e.g. company-model",
     "chooseBackend": "Choose backend",
@@ -855,17 +872,17 @@
     "editOffering": "Edit {{name}}",
     "removeOffering": "Remove {{name}}",
     "everyone": "Everyone on this Host",
-    "customBackendsTitle": "Custom backends",
-    "customBackendTitle": "Custom OpenAI-compatible backend",
-    "customBackendHelp": "Add one endpoint once, then list every model it supports on separate lines or separated by commas.",
+    "customBackendsTitle": "Custom endpoints",
+    "customBackendTitle": "Custom OpenAI-compatible endpoint",
+    "customBackendHelp": "Add an endpoint and its model IDs.",
     "backendNamePlaceholder": "Backend name",
     "modelIdsPlaceholder": "Model IDs, one per line",
-    "backendName": "Backend name",
-    "addBackend": "Add custom backend",
-    "saveBackend": "Save backend",
-    "savingBackend": "Saving backend…",
+    "backendName": "Endpoint name",
+    "addBackend": "Add custom endpoint",
+    "saveBackend": "Save endpoint",
+    "savingBackend": "Saving endpoint…",
     "editConnection": "Edit {{name}}",
-    "noCustomBackends": "No custom backends yet. Add one endpoint and all of its supported models here.",
+    "noCustomBackends": "No custom endpoints yet.",
     "keepCredentialPlaceholder": "Leave blank to keep the saved credential",
     "credentialCustodyHelp": "The Host process keeps this secret. It is never returned in settings lists or shown to collaborators.",
     "upstreamModels": "Upstream models",
@@ -889,7 +906,7 @@
     }
   },
   "skillsSettings": {
-    "aboutTitle": "Instructions and working assets—not executable plugins",
+    "aboutTitle": "About Skills",
     "aboutDescription": "Skills package instructions, references, and supporting files for the agent. Installing a Skill does not install an executable plugin or run a shell command.",
     "sessionPins": "Existing Sessions keep the exact Skill revisions they started with. Updates apply to new Sessions, so ongoing work stays reproducible.",
     "viewsLabel": "Skills library views",
@@ -911,8 +928,6 @@
     "selectProjectReadOnly": "Select a Project to see the Project and Host Skills available there.",
     "empty": "No Skills are installed in this scope yet.",
     "noResults": "No installed Skills match this search.",
-    "installTitle": "Install a reviewed GitHub Skill",
-    "installDescription": "OpenGUI accepts the documented GitHub source format, validates the Skill tree, and resolves mutable refs to an immutable commit before publishing it.",
     "chooseScope": "Installation scope",
     "scopeHelp": {
       "project": "Available only in the selected Project and stored with its Project configuration.",
@@ -923,11 +938,7 @@
     "repositorySource": "GitHub source",
     "reviewInstall": "Review install",
     "invalidSource": "Use github:OWNER/REPOSITORY/PATH@REF or the legacy OWNER/REPOSITORY@SKILL format.",
-    "sourceHelp": "This is not arbitrary Git input. OpenGUI reads a public GitHub repository through its API and never invokes npx or a shell installer.",
-    "githubOnlyTitle": "GitHub repositories only",
-    "githubOnlyDescription": "The current Host supports the exact source grammar shown above. Other Git hosts and arbitrary URLs are not supported.",
-    "trustTitle": "Review before trusting",
-    "trustDescription": "Source and revision metadata establish provenance, not safety. Review the repository and its SKILL.md before installing.",
+    "sourceHelp": "Use a public GitHub repository.",
     "manual": "Manual only",
     "modified": "Locally modified",
     "metadata": {
@@ -961,7 +972,7 @@
     },
     "confirm": {
       "installTitle": "Install {{name}}?",
-      "installDescription": "OpenGUI will validate this source and publish it at {{scope}} scope. No shell installer will run.",
+      "installDescription": "Review the source before installing it for {{scope}}.",
       "installAction": "Install Skill",
       "updateTitle": "Check {{name}} for updates?",
       "updateDescription": "OpenGUI will resolve the saved source again and atomically publish its latest immutable revision at {{scope}} scope.",
@@ -969,22 +980,33 @@
       "removeTitle": "Remove {{name}}?",
       "removeDescription": "This removes the managed {{scope}} installation. Existing Sessions remain revision-locked.",
       "removeAction": "Remove Skill"
-    }
+    },
+    "projectScopeName": "Available only in {{project}}."
   },
   "setupWizard": {
     "connectModelTitle": "Connect a model",
-    "connectModelDescription": "Add an OpenAI-compatible connection. You can change this later in Settings.",
     "baseUrl": "Base URL",
     "apiKey": "API key",
     "model": "Model",
-    "skip": "Skip",
-    "readyDescription": "OpenGUI is ready. Connect a project and start a Session with the first-party agent.",
-    "chooseStartTitle": "Choose where new chats start",
-    "chooseStartDescription": "New chats open in this folder unless you pick another one.",
+    "skip": "Set up later",
+    "chooseStartTitle": "Choose a project folder",
+    "chooseStartDescription": "New chats start here by default.",
     "readyTitle": "You're ready",
-    "folderPlaceholder": "Choose a folder or leave empty",
+    "folderPlaceholder": "Paste a folder path",
     "continue": "Continue",
-    "openOpenGui": "Open OpenGUI"
+    "readyWithoutModel": "Connect a model in Settings to send messages.",
+    "folderLabel": "Project folder (optional)",
+    "chooseProject": "Choose a project folder",
+    "finishLater": "Finish for now",
+    "projectOpenError": "OpenGUI could not open this folder. Go back and choose an accessible folder, or try again.",
+    "optionalKey": "API key (if required)",
+    "finishWithoutModel": "Open your workspace",
+    "exampleModel": "e.g. model-name",
+    "otherProviderHelp": "Find the base URL and model ID in your provider’s setup guide.",
+    "modelSaveError": "The connection could not be saved. Check the details and try again.",
+    "guidedProviderSetup": "Choose a provider",
+    "manualConnection": "Custom endpoint",
+    "connectionOptions": "Connection options"
   },
   "languages": {
     "af": "Afrikaans",
@@ -1083,11 +1105,12 @@
     "noWorkspaceTitle": "No workspace configured",
     "noWorkspaceDescription": "A workspace is your OpenGUI backend. Create one, then add projects to it.",
     "addWorkspace": "Add workspace",
-    "noSharedProjects": "No project folders have been shared with your account yet. Ask the Host owner or an inviter for access."
+    "noSharedProjects": "No project folders have been shared with your account yet. Ask the Host owner or an inviter for access.",
+    "openProject": "Open a project",
+    "openProjectTitle": "No projects yet"
   },
   "emptySession": {
-    "heading": "What are we working on?",
-    "headingInProject": "What are we working on in <project>{{project}}</project>?"
+    "heading": "New chat"
   },
   "questionPanel": {
     "title": "The assistant has a question",
@@ -1099,7 +1122,7 @@
     "noLineDiffAvailable": "No line diff available."
   },
   "reasoning": {
-    "thinking": "Thinking",
+    "thinking": "Reasoning",
     "thinkingRunning": "Thinking..."
   },
   "toolLabels": {
@@ -1172,7 +1195,10 @@
     "searchFolders": "Search folders",
     "clearSearch": "Clear folder search",
     "noMatchingFolders": "No folders match your search",
-    "loadingServerFolders": "Loading server folders..."
+    "unavailableFolder": "This folder is unavailable.",
+    "loadingServerFolders": "Loading server folders...",
+    "defaultTitle": "Choose a project folder",
+    "useFolder": "Use this folder"
   },
   "fileMention": {
     "searching": "Searching...",
@@ -1189,7 +1215,17 @@
     "steer": "steer",
     "edit": "Edit",
     "moveToTop": "Move to top",
-    "moveToBottom": "Move to bottom"
+    "moveToBottom": "Move to bottom",
+    "title": "Queued messages ({{count}})",
+    "next": "Next",
+    "waitingForRun": "Waiting for the current run",
+    "paused": "Paused. Choose Send now to continue.",
+    "collapse": "Collapse queued messages",
+    "expand": "Show all queued messages",
+    "stopAndSend": "Stop current run and send",
+    "stopAndSendCompact": "Stop and send",
+    "expandMessage": "Show full message",
+    "collapseMessage": "Collapse message"
   },
   "permissionPanel": {
     "title": "Permission: {{permission}}",
@@ -1232,12 +1268,12 @@
   "viewLink": {
     "loadingTitle": "Shared Session",
     "readOnly": "Read-only transcript",
-    "invalid": "This view link is invalid, expired, or has been revoked.",
+    "invalid": "This link is unavailable. Ask the sender for a new link.",
+    "loadFailed": "Could not load this transcript.",
     "empty": "This Session has no messages yet.",
     "usedTool": "Used {{tool}}",
     "user": "User",
-    "assistant": "OpenGUI",
-    "footer": "Shared from OpenGUI · Read-only"
+    "assistant": "OpenGUI"
   },
   "host": {
     "lowDiskSpace": "This Host is almost out of disk space. Saving chats may fail until space is freed."
@@ -1258,8 +1294,8 @@
     "open": "Open",
     "openInFileBrowser": "Open in file manager",
     "fileBrowserFailed": "Could not open the file manager. Try again.",
-    "back": "Back",
-    "forward": "Forward",
+    "back": "Previous file or folder",
+    "forward": "Next file or folder",
     "close": "Close files",
     "download": "Download",
     "downloadFailed": "Could not download the file",
@@ -1295,6 +1331,18 @@
       "folderFailed": "Could not load this folder. Check your connection and try again.",
       "fileFailed": "Could not load this file. Check your connection and try again."
     },
-    "lineLimit": "Showing the first {{count}} lines. Download for the full file."
+    "lineLimit": "Showing the first {{count}} lines. Download for the full file.",
+    "linkedLine": "Linked line {{line}}",
+    "projectFiles": "Project files",
+    "backToFiles": "Back to files",
+    "pdfPages_one": "{{count}} page",
+    "pdfPages_other": "{{count}} pages",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "fitWidth": "Fit width",
+    "pdfOverflow": "Scroll sideways to see the whole page.",
+    "pdfPreview": "PDF preview",
+    "pdfPageFailed": "Could not display page {{page}}.",
+    "pdfTextUnavailable": "Text selection unavailable on page {{page}}."
   }
 }

@@ -1,4 +1,4 @@
-import { PanelRightIcon } from "lucide-react";
+import { FolderOpen, PanelRightIcon } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -29,14 +29,15 @@ export function FilesPanelToggle() {
     <Button
       variant="ghost"
       size="icon"
-      className="size-8 bg-background/90 text-muted-foreground hover:text-foreground"
+      className="size-8 max-md:size-11 bg-background/90 text-muted-foreground hover:text-foreground"
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       title={label}
       aria-label={label}
       aria-expanded={panel.open}
       onClick={panel.toggle}
     >
-      <PanelRightIcon />
+      <PanelRightIcon className="hidden md:block" />
+      <FolderOpen className="md:hidden" />
     </Button>
   );
 }

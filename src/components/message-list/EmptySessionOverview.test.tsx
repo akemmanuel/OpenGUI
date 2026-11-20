@@ -42,7 +42,7 @@ describe("EmptySessionOverview", () => {
 
     render(<EmptySessionOverview directory="/work/demo-site/" />);
 
-    expect(screen.getByRole("heading").textContent).toBe("emptySession.headingInProject:demo-site");
+    expect(screen.getByRole("heading").textContent).toBe("emptySession.heading");
     expect(screen.queryByRole("button")).toBeNull();
     await waitFor(() => expect(ensureSessionSkills).toHaveBeenCalledWith(skills));
   });

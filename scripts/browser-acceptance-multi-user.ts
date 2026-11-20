@@ -239,7 +239,7 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   log("owner bootstrap uses the product setup gate on a fresh isolated Host");
   await browser(ownerBrowser!, "open", frontendUrl);
   await browser(ownerBrowser!, "set", "viewport", "1440", "900");
-  await waitForText(ownerBrowser!, "Set up this Host", 45_000);
+  await waitForText(ownerBrowser!, "Create the owner account", 45_000);
   await fillLabel(ownerBrowser!, "Username", "acceptance_owner");
   await fillLabel(ownerBrowser!, "Email", "owner@example.test");
   await fillLabel(ownerBrowser!, "Password", "acceptance-password");
@@ -271,7 +271,7 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   await clickButton(ownerBrowser!, "People");
   await waitForText(ownerBrowser!, "Members");
   await clickButton(ownerBrowser!, "System");
-  await expectText(ownerBrowser!, "Invite only");
+  await waitForText(ownerBrowser!, "Invite only");
 
   log("an invite with initial read access is accepted in a second isolated browser");
   const invite = await api<{ token: string }>(backendUrl, "/api/identity/invites", {
@@ -293,7 +293,7 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   await fillLabel(invitedBrowser!, "Password", "acceptance-password");
   await fillLabel(invitedBrowser!, "Confirm password", "acceptance-password");
   await clickButton(invitedBrowser!, "Join Team");
-  await closeSetupWizard(invitedBrowser!);
+  await waitForText(invitedBrowser!, "invited_member");
   const invited = await login(backendUrl, "invited_member", "acceptance-password");
 
   log(
@@ -343,7 +343,7 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   await fillLabel(registeredBrowser!, "Password", "acceptance-password");
   await fillLabel(registeredBrowser!, "Confirm password", "acceptance-password");
   await clickButton(registeredBrowser!, "Create account");
-  await closeSetupWizard(registeredBrowser!);
+  await waitForText(registeredBrowser!, "No project folders have been shared");
   const registered = await login(backendUrl, "open_member", "acceptance-password");
   await expectText(registeredBrowser!, "No project folders have been shared with your account yet");
 
@@ -580,9 +580,9 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
     method: "DELETE",
   });
   await browser(publicBrowser!, "reload");
-  await waitForText(publicBrowser!, "This view link is invalid, expired, or has been revoked.");
+  await waitForText(publicBrowser!, "Ask the sender for a new link.");
   await browser(invalidBrowser!, "open", `${frontendUrl}?view=invalid-local-fixture`);
-  await waitForText(invalidBrowser!, "This view link is invalid, expired, or has been revoked.");
+  await waitForText(invalidBrowser!, "Ask the sender for a new link.");
   const expiring = await api<{ token: string }>(
     backendUrl,
     `/api/identity/sessions/${session.id}/view-links`,

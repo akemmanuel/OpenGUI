@@ -56,7 +56,7 @@ export function TextPartView({
   }
 
   return (
-    <div>
+    <div className="[&_.markdown-renderer]:text-[0.9375rem] [&_.markdown-renderer]:leading-[1.65] [&_.markdown-renderer>p]:max-w-[74ch] [&_.markdown-renderer>ul]:max-w-[74ch] [&_.markdown-renderer>ol]:max-w-[74ch]">
       <MarkdownImageContext.Provider value={markdownImages}>
         <MarkdownRenderer content={part.text} />
       </MarkdownImageContext.Provider>

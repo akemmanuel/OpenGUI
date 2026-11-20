@@ -34,6 +34,7 @@ interface PromptBoxProps extends Omit<
   onSubmit?: (message: string, mode?: QueueMode) => void | Promise<void>;
   onStop?: () => void;
   isLoading?: boolean;
+  isNewProjectChat?: boolean;
   autoFocus?: boolean;
   /** Current queue mode (controlled from parent) */
   queueMode: QueueMode;
@@ -55,6 +56,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       onSubmit,
       onStop,
       isLoading,
+      isNewProjectChat,
       autoFocus,
       queueMode,
       onQueueModeChange,
@@ -71,7 +73,12 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const isDisabled = Boolean(props.disabled);
 
     const { setAgent, sendCommand, findFiles, setSessionDraft, clearSessionDraft } = useActions();
-    const { commands, agents, selectedAgent, selectedModel } = useModelState();
+    const { commands, agents, selectedAgent, selectedModel, providers } = useModelState();
+    const needsModel =
+      isNewProjectChat &&
+      !isDisabled &&
+      !selectedModel &&
+      !providers?.some((provider) => Object.keys(provider.models).length > 0);
     const capabilities = useBackendCapabilities();
     const { sessions, activeSessionId, activeTargetDirectory, sessionDrafts } = useSessionState();
     const promptHistory = useActiveTranscriptPromptHistory();
@@ -194,6 +201,13 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
     const hasPromptText = promptSubmit.hasValue;
     const isSessionRunning = Boolean(isLoading);
+    const runSendLabel = t(
+      queueMode === "after-part"
+        ? "prompt.steer"
+        : queueMode === "interrupt"
+          ? "queueList.stopAndSendCompact"
+          : "prompt.queue",
+    );
     const canSendSelection = Boolean(selectedModel);
 
     React.useEffect(() => {
@@ -234,8 +248,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         onDragLeave={promptFiles.handleDragLeave}
         onDrop={promptFiles.handleDrop}
         className={cn(
-          "flex flex-col border border-input border-b-0 bg-background px-2 pt-2 pb-[var(--app-safe-bottom)] shadow-none transition-colors cursor-text rounded-t-xl md:rounded-xl md:border-b md:pb-0 md:shadow-sm",
-          "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30",
+          "flex cursor-text flex-col rounded-xl border border-input/75 bg-card px-2.5 pt-1.5 transition-colors md:px-3",
+          "focus-within:border-ring focus-within:outline focus-within:outline-ring/35",
           "dark:border-input/80",
           promptFiles.isDragging && "border-ring ring-ring/50 ring-[3px]",
           className,
@@ -247,6 +261,11 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           }
         }}
       >
+        {needsModel && (
+          <p className="px-2 pt-1 pb-0.5 text-xs leading-5 font-medium text-muted-foreground">
+            {t("prompt.modelRequired")}
+          </p>
+        )}
         {fileMention.open &&
           (fileMention.results.length > 0 || fileMention.loading || fileMention.emptyMessage) && (
             <div className="relative">
@@ -321,33 +340,36 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                   : queueMode === "interrupt"
                     ? t("prompt.interruptAndSend")
                     : t("prompt.queueMessage")
-                : t("prompt.message")
+                : t(isNewProjectChat ? "prompt.firstMessage" : "prompt.message")
           }
-          className="min-h-10 w-full resize-none border-0 bg-transparent px-2 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/95 focus:ring-0 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-12 w-full resize-none border-0 bg-transparent px-2 py-2.5 text-base text-foreground placeholder:text-muted-foreground focus:ring-0 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           {...props}
         />
 
         <div
-          className="flex min-w-0 items-center gap-0.5 overflow-hidden px-0.5 pt-0.5 pb-1.5"
+          className="flex min-w-0 flex-wrap items-center gap-1 px-0.5 pb-2"
           data-responsive-allow="text-clip"
         >
           <PromptAddMenu disabled={isDisabled} fileInputRef={fileInputRef} />
 
           <div
-            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden py-0.5"
+            className="flex min-w-[min(9rem,100%)] flex-1 items-center gap-0.5 overflow-hidden py-0.5"
             data-responsive-allow="text-clip"
           >
             <ModelSelector />
-            <ReasoningEffortSelector />
+            <ReasoningEffortSelector compact={isSessionRunning} />
           </div>
 
           {isLoading && (
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               title={queueMode === "after-part" ? t("prompt.steerTitle") : t("prompt.queueTitle")}
-              className="!h-7 shrink-0 gap-1.5 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              aria-label={
+                queueMode === "after-part" ? t("prompt.steerTitle") : t("prompt.queueTitle")
+              }
+              className="shrink-0 text-muted-foreground hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
                 onQueueModeChange(queueMode === "after-part" ? "queue" : "after-part");
@@ -358,12 +380,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
               ) : (
                 <ListEnd className="size-3.5 shrink-0" />
               )}
-              <span
-                className="hidden max-w-[100px] truncate sm:inline"
-                data-responsive-allow="text-clip"
-              >
-                {queueMode === "after-part" ? t("prompt.steer") : t("prompt.queue")}
-              </span>
             </Button>
           )}
 
@@ -380,31 +396,27 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             {shouldShowStopButton({ isSessionRunning }) && (
               <Button
                 type="button"
-                size="icon-sm"
-                variant="default"
-                className="bg-primary text-[oklch(0.985_0_0)] hover:bg-primary/85 dark:text-primary-foreground"
-                title={t("prompt.stop")}
+                size="lg"
+                variant="outline"
+                className="max-sm:gap-1 max-sm:px-2"
+                title={t("prompt.stopGenerating")}
+                aria-label={t("prompt.stop")}
                 onClick={(e) => {
                   e.stopPropagation();
                   onStop?.();
                 }}
               >
                 <Square className="size-3.5 fill-current" />
-                <span className="sr-only">{t("prompt.stopGenerating")}</span>
+                <span className="sm:hidden">{t("prompt.stopCompact")}</span>
+                <span className="hidden sm:inline">{t("prompt.stop")}</span>
               </Button>
             )}
             {shouldShowSendButton({ hasPromptText, isSessionRunning }) && (
               <Button
                 type="button"
-                size="icon-sm"
+                size={isLoading ? "lg" : "icon-lg"}
                 variant="default"
-                title={
-                  isLoading
-                    ? queueMode === "after-part"
-                      ? t("prompt.steer")
-                      : t("prompt.queue")
-                    : t("prompt.send")
-                }
+                title={isLoading ? runSendLabel : t("prompt.send")}
                 disabled={isDisabled || !hasPromptText || !canSendSelection}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -412,12 +424,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 }}
               >
                 <ArrowUp />
-                <span className="sr-only">
-                  {isLoading
-                    ? queueMode === "after-part"
-                      ? t("prompt.steer")
-                      : t("prompt.queueMessage")
-                    : t("prompt.sendMessage")}
+                <span className={isLoading ? undefined : "sr-only"}>
+                  {isLoading ? runSendLabel : t("prompt.sendMessage")}
                 </span>
               </Button>
             )}

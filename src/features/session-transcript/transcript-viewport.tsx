@@ -13,7 +13,6 @@ import {
 import type { PromptMarker } from "@/features/session-transcript/transcript-prompt-markers";
 import { TranscriptPromptRail } from "@/features/session-transcript/transcript-prompt-rail";
 import { usePinnedScroll } from "@/features/session-transcript/use-pinned-scroll";
-import { useChatWidth } from "@/hooks/use-chat-width";
 
 export function TranscriptViewport({
   sessionId,
@@ -39,7 +38,6 @@ export function TranscriptViewport({
   promptMarkers?: readonly PromptMarker[];
 }) {
   const { t } = useTranslation();
-  const [chatWidth] = useChatWidth();
   const { scrollRef, onScroll, detachPin, capturePrependAnchor, scrollToBottom } = usePinnedScroll({
     sessionId,
     contentKey,
@@ -63,7 +61,8 @@ export function TranscriptViewport({
   const showPromptRail = promptMarkers.length > 1;
 
   return (
-    <div key={sessionId} className="relative flex min-h-0 flex-1 flex-col">
+    <div key={sessionId} className="relative flex min-h-0 flex-1 flex-col pt-6">
+      <ScrollTimeIndicator label={timeIndicator.label} visible={timeIndicator.visible} />
       <div
         ref={scrollRef}
         onScroll={() => {
@@ -74,13 +73,9 @@ export function TranscriptViewport({
         onWheel={(event) => {
           if (event.deltaY < 0) detachPin();
         }}
-        className={`relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background py-4 pr-4 max-md:pt-14 [overflow-anchor:none] ${showPromptRail ? "pl-8" : "pl-4"}`}
+        className={`relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background pr-3 pb-6 min-[375px]:pr-4 md:px-8 [overflow-anchor:none] ${showPromptRail ? "pl-8" : "pl-3 min-[375px]:pl-4"}`}
       >
-        <ScrollTimeIndicator label={timeIndicator.label} visible={timeIndicator.visible} />
-        <div
-          className="mx-auto flex min-w-0 w-full flex-col gap-0 md:w-[var(--chat-width)]"
-          style={{ "--chat-width": `${chatWidth}%` } as React.CSSProperties}
-        >
+        <div className="chat-column flex min-w-0 flex-col">
           {showLoadOlderRow && (
             <div className="flex flex-col items-center justify-center gap-1 py-2">
               {isLoadingOlder ? (

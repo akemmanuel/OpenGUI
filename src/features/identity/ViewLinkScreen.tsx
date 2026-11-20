@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { HostSessionSnapshot } from "@/protocol/host-types";
-import { createIdentityClient } from "./identity-client";
+import { createIdentityClient, IdentityRequestError } from "./identity-client";
 
 type TranscriptItem =
   | { id: string; kind: "user" | "assistant"; text: string; actor?: string }
@@ -39,27 +39,29 @@ function transcript(snapshot: HostSessionSnapshot): TranscriptItem[] {
   });
 }
 
-export function readViewLinkToken(url = window.location.href) {
-  return new URL(url).searchParams.get("view")?.trim() || null;
-}
-
 export function ViewLinkScreen({ token }: { token: string }) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<HostSessionSnapshot | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<"unavailable" | "connection" | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setSnapshot(null);
-    setFailed(false);
+    setFailure(null);
     void createIdentityClient({ baseUrl: window.location.origin })
       .resolveSessionViewLink(token)
       .then((value) => {
         if (!cancelled) setSnapshot(value.session);
       })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setFailure(
+            error instanceof IdentityRequestError && error.status === 410
+              ? "unavailable"
+              : "connection",
+          );
+        }
       });
     return () => {
       cancelled = true;
@@ -89,19 +91,23 @@ export function ViewLinkScreen({ token }: { token: string }) {
       </header>
 
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-        {failed ? (
+        {failure ? (
           <div className="space-y-3">
             <Alert variant="destructive">
               <AlertCircle />
-              <AlertDescription>{t("viewLink.invalid")}</AlertDescription>
+              <AlertDescription>
+                {t(failure === "unavailable" ? "viewLink.invalid" : "viewLink.loadFailed")}
+              </AlertDescription>
             </Alert>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setAttempt((value) => value + 1)}
-            >
-              {t("common.retry")}
-            </Button>
+            {failure === "connection" && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAttempt((value) => value + 1)}
+              >
+                {t("common.retry")}
+              </Button>
+            )}
           </div>
         ) : !snapshot ? (
           <div className="space-y-6" role="status" aria-label={t("common.loading")}>
@@ -143,9 +149,6 @@ export function ViewLinkScreen({ token }: { token: string }) {
           </div>
         )}
       </div>
-      <footer className="mx-auto max-w-3xl border-t px-4 py-5 text-center text-xs text-muted-foreground">
-        {t("viewLink.footer")}
-      </footer>
     </main>
   );
 }

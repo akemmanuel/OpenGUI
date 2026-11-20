@@ -9,6 +9,8 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { ProviderIcon } from "@/components/provider-icons";
+import { openModelConnections } from "@/features/app-shell/open-model-connections";
+import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -98,6 +100,8 @@ function ModelRow({
 
 export function ModelSelector() {
   const { t } = useTranslation();
+  const actor = useIdentityActor();
+  const canConfigure = actor?.type !== "user" || actor.role === "owner" || actor.role === "admin";
   const { setModel } = useActions();
   const { providers, selectedModel } = useModelState();
   const [open, setOpen] = useState(false);
@@ -280,7 +284,18 @@ export function ModelSelector() {
     }
   };
 
-  const triggerLabel = currentModel?.label ?? (selectedModel ? selectedModel.modelID : null);
+  const needsConnection = models.length === 0 && !selectedModel;
+  const triggerLabel =
+    currentModel?.label ?? selectedModel?.modelID ?? t("modelSelector.dialogTitle");
+
+  if (needsConnection && canConfigure) {
+    return (
+      <Button type="button" size="sm" variant="outline" onClick={() => openModelConnections()}>
+        <BrainCircuit aria-hidden="true" />
+        {t("modelSelector.setupModel")}
+      </Button>
+    );
+  }
 
   return (
     <Dialog
@@ -301,7 +316,7 @@ export function ModelSelector() {
               : t("modelSelector.dialogTitle")
           }
           data-responsive-allow="text-clip"
-          className="!h-7 !min-w-0 !flex-1 max-w-24 gap-1.5 overflow-hidden px-2 text-xs text-muted-foreground hover:text-foreground sm:max-w-44"
+          className="min-h-8 min-w-0 max-w-44 shrink gap-1.5 overflow-hidden px-2 text-xs text-foreground hover:text-foreground"
         >
           {selectedModel ? (
             <ProviderIcon
@@ -312,7 +327,7 @@ export function ModelSelector() {
             <BrainCircuit className="size-3.5 shrink-0" />
           )}
           <span className="truncate" data-responsive-allow="text-clip">
-            {triggerLabel ?? t("modelSelector.dialogTitle")}
+            {triggerLabel}
           </span>
         </Button>
       </DialogTrigger>
@@ -326,19 +341,21 @@ export function ModelSelector() {
         <DialogHeader className="px-4 pt-4 pb-3">
           <DialogTitle className="text-base">{t("modelSelector.dialogTitle")}</DialogTitle>
         </DialogHeader>
-        <div className="border-y px-3 py-2.5 sm:px-4">
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              ref={inputRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={handleInputKeyDown}
-              placeholder={t("modelSelector.searchPlaceholder")}
-              className="h-9 pl-8"
-            />
+        {models.length > 0 && (
+          <div className="border-y px-3 py-2.5 sm:px-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={inputRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={handleInputKeyDown}
+                placeholder={t("modelSelector.searchPlaceholder")}
+                className="h-9 pl-8"
+              />
+            </div>
           </div>
-        </div>
+        )}
         <div className="min-h-0 overflow-y-auto p-2">
           {normalizedQuery ? (
             searchResults.length > 0 ? (
@@ -363,9 +380,25 @@ export function ModelSelector() {
           ) : (
             <div className="space-y-3">
               {visibleModels.length === 0 && (
-                <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-                  {t("modelSelector.noModelsAvailable")}
-                </p>
+                <div className="space-y-3 border-t p-5 text-sm md:p-6">
+                  <p className="font-medium">{t("modelSelector.noModelsAvailable")}</p>
+                  <p className="max-w-[45ch] text-muted-foreground">
+                    {t(
+                      canConfigure ? "modelSelector.connectModelHelp" : "modelSelector.askHostHelp",
+                    )}
+                  </p>
+                  {canConfigure && (
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        close();
+                        openModelConnections();
+                      }}
+                    >
+                      {t("modelSelector.openModelSettings")}
+                    </Button>
+                  )}
+                </div>
               )}
               {recentModels.length > 0 && (
                 <section>

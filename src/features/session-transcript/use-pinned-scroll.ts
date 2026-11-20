@@ -104,13 +104,13 @@ export function usePinnedScroll(input: {
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      if (!input.pinWhenNearBottom || !pinnedRef.current) return;
+      if (!pinnedRef.current) return;
       markProgrammatic();
       pinToBottom(el);
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [input.pinWhenNearBottom, input.sessionId, markProgrammatic]);
+  }, [input.sessionId, markProgrammatic]);
 
   return {
     scrollRef,

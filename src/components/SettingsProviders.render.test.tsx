@@ -36,7 +36,8 @@ const PROVIDERS = [
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, values?: { name?: string }) => (values?.name ? `${key}:${values.name}` : key),
+    t: (key: string, values?: { name?: string; action?: string }) =>
+      values?.name ? `${values.action ?? key}:${values.name}` : key,
   }),
 }));
 vi.mock("@/hooks/use-agent-state", () => ({
@@ -115,18 +116,16 @@ describe("SettingsProviders", () => {
     render(<SettingsProviders />);
 
     expect(
-      await screen.findByRole("button", { name: "providers.directory.signInNamed:ChatGPT" }),
+      await screen.findByRole("button", { name: "providers.directory.subscription:ChatGPT" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "providers.directory.signInNamed:Anthropic" }),
+      screen.getByRole("button", { name: "providers.directory.subscription:Anthropic" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "providers.directory.apiKeyNamed:Anthropic" }),
+      screen.getByRole("button", { name: "providers.directory.apiKey:Anthropic" }),
     ).toBeTruthy();
     // ChatGPT has no API-key sign-in.
-    expect(
-      screen.queryByRole("button", { name: "providers.directory.apiKeyNamed:ChatGPT" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "providers.directory.apiKey:ChatGPT" })).toBeNull();
   });
 
   test("withholds subscriptions and shared connections from a member denied by BYOS policy", async () => {
@@ -141,11 +140,11 @@ describe("SettingsProviders", () => {
     ];
     render(<SettingsProviders />);
     expect(
-      await screen.findByRole("button", { name: "providers.directory.apiKeyNamed:Anthropic" }),
+      await screen.findByRole("button", { name: "providers.directory.apiKey:Anthropic" }),
     ).toBeTruthy();
     expect(screen.queryByText("Shared model")).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "providers.directory.signInNamed:ChatGPT" }),
+      screen.queryByRole("button", { name: "providers.directory.subscription:ChatGPT" }),
     ).toBeNull();
   });
 
@@ -177,7 +176,7 @@ describe("SettingsProviders", () => {
     });
     render(<SettingsProviders />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "providers.directory.apiKeyNamed:Anthropic" }),
+      await screen.findByRole("button", { name: "providers.directory.apiKey:Anthropic" }),
     );
     expect(fixture.beginLogin).toHaveBeenCalledWith("anthropic", "api_key");
     const input = await screen.findByLabelText("Enter Anthropic API key");
@@ -209,7 +208,7 @@ describe("SettingsProviders", () => {
     });
     render(<SettingsProviders />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "providers.directory.apiKeyNamed:OpenCode Zen" }),
+      await screen.findByRole("button", { name: "providers.directory.apiKeyOrFree:OpenCode Zen" }),
     );
     expect(await screen.findByText("providers.directory.freeTierHint")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "providers.login.submit" }));
@@ -235,7 +234,7 @@ describe("SettingsProviders", () => {
     fixture.loginStatus.mockResolvedValue(status);
     render(<SettingsProviders />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "providers.directory.signInNamed:ChatGPT" }),
+      await screen.findByRole("button", { name: "providers.directory.subscription:ChatGPT" }),
     );
     expect(await screen.findByText("ABCD-1234")).toBeTruthy();
     expect(screen.getByRole("button", { name: "auth.example" })).toBeTruthy();

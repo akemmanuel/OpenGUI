@@ -296,22 +296,25 @@ export function SessionRow({
             ) : isNaming ? (
               <Skeleton className="h-4 min-w-0 flex-1 bg-sidebar-foreground/20" />
             ) : (
-              <SessionRowTitle
-                displayTitle={displayTitle}
-                isUnread={isUnread}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startEditing(session.id, session.title || "");
-                }}
-              />
-            )}
-            {projectLabel && editingSessionId !== session.id && !isNaming && (
-              <span
-                className="max-w-[5rem] shrink-0 truncate text-[10px] text-muted-foreground/70"
-                title={projectLabel}
-              >
-                {projectLabel}
-              </span>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <SessionRowTitle
+                  displayTitle={displayTitle}
+                  isUnread={isUnread}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    startEditing(session.id, session.title || "");
+                  }}
+                />
+                {projectLabel && (
+                  <span
+                    className="truncate text-xs text-muted-foreground"
+                    title={projectLabel}
+                    data-responsive-allow="text-clip"
+                  >
+                    {projectLabel}
+                  </span>
+                )}
+              </div>
             )}
             {identityActor?.type === "user" && (
               <span

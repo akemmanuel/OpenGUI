@@ -37,13 +37,13 @@ describe("appearance persistence", () => {
     const query = mediaQuery(false);
     vi.spyOn(window, "matchMedia").mockReturnValue(query as never);
     localStorage.setItem(STORAGE_KEYS.THEME, "light");
-    localStorage.setItem(STORAGE_KEYS.CONTRAST, "25");
+    localStorage.setItem(STORAGE_KEYS.CONTRAST, "20");
     localStorage.setItem(STORAGE_KEYS.ACCENT_COLOR, "#ffffff");
 
     applyStoredAppearance();
 
     expect(document.documentElement.classList.contains("dark")).toBe(false);
-    expect(document.documentElement.style.getPropertyValue("--dynamic-bg-l")).toBe("0.955");
+    expect(document.documentElement.style.getPropertyValue("--dynamic-bg-l")).toBe("0.976");
     expect(document.documentElement.style.getPropertyValue("--dynamic-primary-foreground")).toBe(
       "oklch(0.145 0 0)",
     );

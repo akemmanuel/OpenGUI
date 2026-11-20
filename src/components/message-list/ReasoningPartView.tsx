@@ -37,7 +37,7 @@ export function ReasoningPartView({
     durationMs !== null ? hideZeroDurationLabel(formatDuration(durationMs)) : null;
 
   return (
-    <div className="text-xs font-mono text-muted-foreground overflow-hidden">
+    <div className="overflow-hidden text-xs text-muted-foreground">
       <details open={expanded} onToggle={(e) => setExpanded(e.currentTarget.open)} className="m-0">
         <summary
           className={cn(
@@ -51,7 +51,7 @@ export function ReasoningPartView({
               className={cn("size-3 transition-transform duration-150", expanded && "rotate-90")}
             />
           </span>
-          <span className="font-medium">
+          <span className={cn("font-medium", isThinking && "text-primary")}>
             {isThinking ? t("reasoning.thinkingRunning") : t("reasoning.thinking")}
           </span>
           {durationLabel && <span className="opacity-60">{durationLabel}</span>}

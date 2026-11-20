@@ -40,7 +40,13 @@ import {
 
 export function SettingsProviders({
   onDirtyChange,
-}: { onDirtyChange?: (dirty: boolean) => void } = {}) {
+  initialShowConnections = false,
+  setupMode = false,
+}: {
+  onDirtyChange?: (dirty: boolean) => void;
+  initialShowConnections?: boolean;
+  setupMode?: boolean;
+} = {}) {
   const { t } = useTranslation();
   const { refreshProviders } = useActions();
   const actor = useIdentityActor();
@@ -73,7 +79,7 @@ export function SettingsProviders({
     onDirtyChange?.(accessDirty);
     return () => onDirtyChange?.(false);
   }, [accessDirty, onDirtyChange]);
-  const [showConnections, setShowConnections] = useState(false);
+  const [showConnections, setShowConnections] = useState(initialShowConnections);
   const [showOfferingForm, setShowOfferingForm] = useState(false);
   const [savingOffering, setSavingOffering] = useState(false);
   const [offeringName, setOfferingName] = useState("");
@@ -215,19 +221,37 @@ export function SettingsProviders({
       </div>
     );
 
+  const providerDirectory = (
+    <ProviderDirectory
+      host={host}
+      providers={providers}
+      canManageShared={canManageShared}
+      allowApiKeys={personalByokAllowed}
+      allowSubscriptions={personalByosAllowed}
+      showScope={Boolean(identity)}
+      setupMode={setupMode}
+      onChanged={() => reload().then(refreshProviders)}
+    />
+  );
+  if (setupMode) return providerDirectory;
+
   return (
     <div className="min-w-0 space-y-5 [overflow-wrap:anywhere]">
       {identity && canManageShared && (
-        <div className="flex gap-2" role="group" aria-label={t("settings.tabs.models")}>
+        <div
+          className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/45 p-1"
+          role="group"
+          aria-label={t("settings.tabs.models")}
+        >
           <Button
-            variant={showConnections ? "ghost" : "secondary"}
+            variant={showConnections ? "ghost" : "default"}
             aria-pressed={!showConnections}
             onClick={() => setShowConnections(false)}
           >
             {t("access.catalog")}
           </Button>
           <Button
-            variant={showConnections ? "secondary" : "ghost"}
+            variant={showConnections ? "default" : "ghost"}
             disabled={accessDirty}
             aria-pressed={showConnections}
             onClick={() => setShowConnections(true)}
@@ -240,20 +264,25 @@ export function SettingsProviders({
         identity &&
         actor?.type === "user" &&
         (actor.role === "owner" || actor.role === "admin") && (
-          <section className="space-y-3 border-t pt-5">
-            <div className="divide-y">
+          <section className="space-y-3">
+            <p className="max-w-[65ch] text-sm leading-6 text-muted-foreground">
+              {t("providers.offeringsHelp")}
+            </p>
+            <div className="divide-y rounded-lg border bg-card">
               {offerings.length === 0 && (
-                <p className="px-3 py-4 text-sm text-muted-foreground">
+                <p className="rounded-lg bg-muted/55 px-4 py-5 text-sm leading-6 text-muted-foreground">
                   {t("providers.noOfferings")}
                 </p>
               )}
               {offerings.map((offering) => {
                 const grants = offeringEntitlements[offering.id] ?? [];
                 return (
-                  <div key={offering.id} className="space-y-3 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="break-words text-sm font-medium">{offering.displayName}</p>
+                  <div key={offering.id} className="space-y-3 px-4 py-4">
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="wrap-anywhere text-sm font-semibold">
+                          {offering.displayName}
+                        </p>
                         <p className="break-words text-xs text-muted-foreground">
                           {grants.length
                             ? grants
@@ -439,20 +468,12 @@ export function SettingsProviders({
       {(!identity || !canManageShared || showConnections) && (
         <>
           <div className="space-y-2">
-            <ProviderDirectory
-              host={host}
-              providers={providers}
-              canManageShared={canManageShared}
-              allowApiKeys={personalByokAllowed}
-              allowSubscriptions={personalByosAllowed}
-              showScope={Boolean(identity)}
-              onChanged={() => reload().then(refreshProviders)}
-            />
+            {providerDirectory}
             <h3 className="border-t pt-5 font-medium">{t("providers.customBackendsTitle")}</h3>
             {customConnections.map((connection) => (
               <div
                 key={connection.id}
-                className="flex items-center gap-3 rounded-lg border px-3 py-2"
+                className="flex min-h-14 items-center gap-3 rounded-lg border bg-card px-3 py-2"
               >
                 <div className="min-w-0 flex-1 overflow-hidden" data-responsive-allow="text-clip">
                   <div

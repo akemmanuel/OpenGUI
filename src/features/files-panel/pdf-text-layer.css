@@ -1,0 +1,47 @@
+/* Position the selectable PDF.js text runs over the matching canvas glyphs. */
+.pdf-text-layer {
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  color-scheme: only light;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  line-height: 1;
+  transform-origin: 0 0;
+
+  :is(span, br) {
+    --font-height: 0px;
+    --scale-x: 1;
+    --rotate: 0deg;
+
+    position: absolute;
+    color: transparent;
+    font-size: calc(var(--text-scale-factor) * var(--font-height));
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0 0;
+    transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+    user-select: text;
+  }
+
+  ::selection {
+    background: rgb(0 90 255 / 22%);
+  }
+
+  &[data-main-rotation="90"] {
+    transform: rotate(90deg) translateY(-100%);
+  }
+  &[data-main-rotation="180"] {
+    transform: rotate(180deg) translate(-100%, -100%);
+  }
+  &[data-main-rotation="270"] {
+    transform: rotate(270deg) translateX(-100%);
+  }
+}
