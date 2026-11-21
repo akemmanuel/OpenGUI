@@ -4,6 +4,9 @@ import { createServer, type Server, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import de from "../src/i18n/locales/de.json" with { type: "json" };
+import en from "../src/i18n/locales/en.json" with { type: "json" };
+import es from "../src/i18n/locales/es.json" with { type: "json" };
 import { responsiveAuditExpression, type ResponsiveAuditFinding } from "./responsive-audit.ts";
 import { terminateDetachedProcessTree } from "./process-tree.ts";
 
@@ -62,6 +65,7 @@ function seededAuditCases(seed: number): AuditCase[] {
 
 const auditCases = seededAuditCases(0x0f3a_2026);
 const locales = ["en", "de", "es"] as const;
+const copy = { de, en, es };
 type Locale = (typeof locales)[number];
 const longWord = "UnbrokenResponsiveRegressionWord".repeat(8);
 const hostileUnicode = "超長い設定名مرحبا_שלום_👩🏽‍💻_é_".repeat(10);
@@ -111,7 +115,7 @@ async function startFakeModel(port: number) {
         .find((message) => message.role === "user")?.content;
       const prompt = typeof userContent === "string" ? userContent : "";
       if (prompt.includes("RESPONSIVE_PROVIDER_ERROR")) {
-        response.writeHead(500, { "content-type": "application/json" });
+        response.writeHead(400, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
             error: {
@@ -237,6 +241,32 @@ async function fillLabel(session: string, label: string, value: string) {
   await find(session, "label", label, "fill", value);
 }
 
+async function reopenFixtureChat(session: string) {
+  await browser(session, "set", "viewport", "1200", "900");
+  await waitForText(session, "Responsive regression:");
+  await find(session, "text", "Responsive regression:", "click");
+  await waitForText(session, "Long URL");
+}
+
+async function openSettings(
+  session: string,
+  locale: Locale,
+  tab?: "skills" | "users" | "connections",
+) {
+  await browser(session, "set", "viewport", "390", "844");
+  await browser(
+    session,
+    "eval",
+    `window.dispatchEvent(new CustomEvent('opengui:open-settings', { detail: { showModelConnections: ${tab === "connections"} } })); true`,
+  );
+  await browser(session, "wait", "#settings-section");
+  if (tab === "connections") await waitForText(session, copy[locale].providers.directory.addTitle);
+  else if (tab) {
+    await browser(session, "click", "#settings-section");
+    await find(session, "role", "option", "click", copy[locale].settings.tabs[tab]);
+  }
+}
+
 async function waitForText(session: string, text: string, timeout = 20_000) {
   await browser(session, "wait", "--text", text, "--timeout", String(timeout));
 }
@@ -301,6 +331,7 @@ async function auditMatrix(
   prepare?: (locale: Locale) => Promise<void>,
 ) {
   log(`audit ${state}`);
+  const publicScreen = state.startsWith("public-");
   await browser(session, "set", "media", "light", "reduced-motion");
   for (const locale of locales) {
     await browser(
@@ -310,6 +341,14 @@ async function auditMatrix(
     );
     await browser(session, "reload");
     await browser(session, "wait", "--fn", `document.documentElement.lang === '${locale}'`);
+    await browser(
+      session,
+      "wait",
+      "--fn",
+      publicScreen
+        ? "Boolean(document.querySelector('main article, main [role=alert]'))"
+        : "!document.querySelector('.splash') && Boolean(document.querySelector('main, form, [data-slot=dialog-content]'))",
+    );
     await prepare?.(locale);
     for (const auditCase of auditCases) {
       const { width, height, textScale, dpr, coarsePointer, safeArea } = auditCase;
@@ -350,6 +389,15 @@ async function auditMatrix(
         throw new Error(formatFindings(state, locale, width, height, result.findings));
       }
       if (auditCase === auditCases[0]) {
+        if (
+          publicScreen &&
+          (await browser(
+            session,
+            "eval",
+            "!document.querySelector('main a[href], main button:not(:disabled)')",
+          )) === "true"
+        )
+          continue;
         // Exercise keyboard-only focus movement while each state is live. The
         // geometry audit then verifies focused portals/overlays just like mouse-opened UI.
         let reachedControl = false;
@@ -388,7 +436,7 @@ async function setupOwner(frontendUrl: string, backendUrl: string) {
   await browser(ownerBrowser, "open", frontendUrl);
   await browser(ownerBrowser, "set", "device", "iPhone 14");
   await browser(ownerBrowser, "set", "viewport", "390", "844");
-  await waitForText(ownerBrowser, "Set up this Host");
+  await waitForText(ownerBrowser, "Create the owner account");
   await auditMatrix(ownerBrowser, "owner-account-setup");
   await browser(
     ownerBrowser,
@@ -397,7 +445,7 @@ async function setupOwner(frontendUrl: string, backendUrl: string) {
   );
   await browser(ownerBrowser, "reload");
   await browser(ownerBrowser, "wait", "--fn", "document.documentElement.lang === 'en'");
-  await waitForText(ownerBrowser, "Set up this Host");
+  await waitForText(ownerBrowser, "Create the owner account");
   await fillLabel(ownerBrowser, "Username", "responsive_owner");
   await fillLabel(ownerBrowser, "Email", "responsive-owner@example.test");
   await fillLabel(ownerBrowser, "Password", "responsive-password");
@@ -438,10 +486,8 @@ async function run(frontendUrl: string, backendUrl: string, modelPort: number) {
   await fillLabel(memberBrowser!, "Password", "responsive-password");
   await fillLabel(memberBrowser!, "Confirm password", "responsive-password");
   await clickButton(memberBrowser!, "Create account");
-  await waitForText(memberBrowser!, "Connect a model");
-  await clickButton(memberBrowser!, "Close");
-  const member = await login(backendUrl, "rsp_member", "responsive-password");
   await waitForText(memberBrowser!, "No project folders have been shared");
+  const member = await login(backendUrl, "rsp_member", "responsive-password");
   await auditMatrix(memberBrowser!, "member-empty-share-only");
 
   await api(backendUrl, "/api/host/models", {
@@ -492,18 +538,17 @@ async function run(frontendUrl: string, backendUrl: string, modelPort: number) {
     method: "POST",
     body: { text: `Long URL https://example.test/${longWord} and ${longWord}` },
   });
-  await delay(500);
+  await browser(ownerBrowser!, "reload");
+  await reopenFixtureChat(ownerBrowser!);
   await api(backendUrl, `/api/host/sessions/${session.id}/prompt`, {
     token: owner.token,
     method: "POST",
     body: { text: "RESPONSIVE_PROVIDER_ERROR" },
   });
-  await delay(500);
-  await browser(ownerBrowser!, "reload");
-  await waitForText(ownerBrowser!, "Responsive regression:");
-  await find(ownerBrowser!, "text", "Responsive regression:", "click");
   await waitForText(ownerBrowser!, "Provider failed", 20_000);
-  await auditMatrix(ownerBrowser!, "owner-populated-error-long-content");
+  await auditMatrix(ownerBrowser!, "owner-populated-error-long-content", () =>
+    reopenFixtureChat(ownerBrowser!),
+  );
 
   await api(backendUrl, `/api/host/sessions/${session.id}/prompt`, {
     token: owner.token,
@@ -511,69 +556,22 @@ async function run(frontendUrl: string, backendUrl: string, modelPort: number) {
     body: { text: "RESPONSIVE_LOADING" },
   });
   await waitForText(ownerBrowser!, "Responsive fixture started.", 10_000);
-  await auditMatrix(ownerBrowser!, "owner-loading-running");
+  await auditMatrix(ownerBrowser!, "owner-loading-running", () => reopenFixtureChat(ownerBrowser!));
 
-  await browser(
-    ownerBrowser!,
-    "eval",
-    "window.dispatchEvent(new Event('opengui:open-settings')); true",
+  await auditMatrix(ownerBrowser!, "owner-settings", (locale) =>
+    openSettings(ownerBrowser!, locale),
   );
-  await waitForText(ownerBrowser!, "Preferencias, modelos");
-  await auditMatrix(ownerBrowser!, "owner-settings", async () => {
-    await browser(
-      ownerBrowser!,
-      "eval",
-      "window.dispatchEvent(new Event('opengui:open-settings')); true",
-    );
-    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('#settings-section')");
-  });
-  await auditMatrix(ownerBrowser!, "owner-settings-providers", async () => {
-    await browser(
-      ownerBrowser!,
-      "eval",
-      "window.dispatchEvent(new Event('opengui:open-settings')); true",
-    );
-    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('#settings-section')");
-    await browser(
-      ownerBrowser!,
-      "eval",
-      "const s=document.querySelector('#settings-section'); s.value='models'; s.dispatchEvent(new Event('change',{bubbles:true})); true",
-    );
-  });
-  await auditMatrix(ownerBrowser!, "owner-settings-skills", async () => {
-    await browser(
-      ownerBrowser!,
-      "eval",
-      "window.dispatchEvent(new Event('opengui:open-settings')); true",
-    );
-    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('#settings-section')");
-    await browser(
-      ownerBrowser!,
-      "eval",
-      "const s=document.querySelector('#settings-section'); s.value='skills'; s.dispatchEvent(new Event('change',{bubbles:true})); true",
-    );
-    await browser(
-      ownerBrowser!,
-      "wait",
-      "--fn",
-      "!!document.querySelector('[data-testid=skills-library]')",
-    );
-  });
-  await auditMatrix(ownerBrowser!, "owner-settings-team", async () => {
-    await browser(
-      ownerBrowser!,
-      "eval",
-      "window.dispatchEvent(new Event('opengui:open-settings')); true",
-    );
-    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('#settings-section')");
-    await browser(
-      ownerBrowser!,
-      "eval",
-      "const s=document.querySelector('#settings-section'); s.value='users'; s.dispatchEvent(new Event('change',{bubbles:true})); true",
-    );
-  });
-  await clickButton(ownerBrowser!, "Volver");
-  await waitForText(ownerBrowser!, "Responsive regression:");
+  await auditMatrix(ownerBrowser!, "owner-settings-providers", (locale) =>
+    openSettings(ownerBrowser!, locale, "connections"),
+  );
+  await auditMatrix(ownerBrowser!, "owner-settings-skills", (locale) =>
+    openSettings(ownerBrowser!, locale, "skills"),
+  );
+  await auditMatrix(ownerBrowser!, "owner-settings-team", (locale) =>
+    openSettings(ownerBrowser!, locale, "users"),
+  );
+  await clickButton(ownerBrowser!, es.settings.backToChat);
+  await reopenFixtureChat(ownerBrowser!);
   await browser(
     ownerBrowser!,
     "eval",
@@ -606,10 +604,10 @@ async function run(frontendUrl: string, backendUrl: string, modelPort: number) {
     body: { granteeType: "user", granteeId: member.actor.id, role: "view" },
   });
   await browser(memberBrowser!, "reload");
-  await waitForText(memberBrowser!, "Responsive regression:");
-  await find(memberBrowser!, "text", "Responsive regression:", "click");
-  await waitForText(memberBrowser!, "Long URL");
-  await auditMatrix(memberBrowser!, "member-read-only-populated");
+  await reopenFixtureChat(memberBrowser!);
+  await auditMatrix(memberBrowser!, "member-read-only-populated", () =>
+    reopenFixtureChat(memberBrowser!),
+  );
 
   const link = await api<{ token: string }>(
     backendUrl,
@@ -624,7 +622,7 @@ async function run(frontendUrl: string, backendUrl: string, modelPort: number) {
 
   await browser(errorBrowser!, "open", `${frontendUrl}?view=invalid-responsive-token`);
   await browser(errorBrowser!, "set", "device", "iPhone 14");
-  await waitForText(errorBrowser!, "This view link is invalid");
+  await waitForText(errorBrowser!, "Ask the sender for a new link.");
   await auditMatrix(errorBrowser!, "public-error");
 
   for (const browserSession of browserSessions) {

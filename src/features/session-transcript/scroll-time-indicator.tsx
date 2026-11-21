@@ -60,11 +60,11 @@ export function useScrollTimeIndicator(scrollRef: RefObject<HTMLElement | null>)
 export function ScrollTimeIndicator({ label, visible }: { label?: string; visible: boolean }) {
   return (
     <div
-      className="pointer-events-none sticky top-0 z-10 flex h-0 items-start justify-center"
+      className="pointer-events-none absolute inset-x-0 top-0 flex h-6 items-center justify-center"
       aria-hidden
     >
       <span
-        className={`mt-1 rounded-full border border-border/60 bg-background/90 px-3 py-1 text-xs tabular-nums text-muted-foreground shadow-sm backdrop-blur transition-opacity duration-300 motion-reduce:transition-none ${
+        className={`rounded-full border bg-card px-3 text-xs font-medium tabular-nums text-foreground transition-opacity duration-300 motion-reduce:transition-none ${
           visible && label ? "opacity-100" : "opacity-0"
         }`}
       >

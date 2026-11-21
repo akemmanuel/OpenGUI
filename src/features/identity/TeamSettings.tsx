@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { copyTextToClipboard } from "@/lib/browser";
+import { getProjectName } from "@/lib/path";
 import { notifySuccess } from "@/lib/notify";
 import { PersonAccessSummary } from "./PersonAccessSummary";
 import { buildInviteLink } from "./invite-url";
@@ -699,10 +700,6 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
         </div>
       )}
 
-      {view === "host" && currentRole === "owner" && client && (
-        <MailDeliverySection client={client} />
-      )}
-
       {view === "host" && currentRole === "owner" && (
         <SettingsSection
           icon={<Settings2 className="size-4" />}
@@ -763,6 +760,10 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
             </div>
           )}
         </SettingsSection>
+      )}
+
+      {view === "host" && currentRole === "owner" && client && (
+        <MailDeliverySection client={client} />
       )}
 
       {(view === "people" || view === "paths") && (
@@ -959,11 +960,16 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
                       />
                       <Label
                         htmlFor={`invite-root-${root}`}
-                        className="w-0 min-w-0 max-w-full flex-1 truncate font-mono text-xs"
+                        className="w-0 min-w-0 max-w-full flex-1 flex-col items-start gap-1"
                         title={root}
                         data-responsive-allow="text-clip"
                       >
-                        {root}
+                        <span className="w-full truncate text-sm">
+                          {getProjectName(root, root)}
+                        </span>
+                        <span className="w-full truncate font-mono text-xs font-normal text-muted-foreground">
+                          {root}
+                        </span>
                       </Label>
                       {grant && (
                         <Select
@@ -1125,6 +1131,27 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
         <PersonAccessSummary
           member={accessMember}
           client={client}
+          folderAccess={
+            currentRole === "owner" && pathGrantAdministrationEnabled(pathPolicy)
+              ? accessMember.role === "owner"
+                ? "unrestricted"
+                : "granted"
+              : undefined
+          }
+          onManageFolders={
+            currentRole === "owner" &&
+            pathGrantAdministrationEnabled(pathPolicy) &&
+            accessMember.role !== "owner"
+              ? () => {
+                  setGrantSubject({
+                    kind: "member",
+                    id: accessMember.id,
+                    name: accessMember.username,
+                  });
+                  setAccessMember(null);
+                }
+              : undefined
+          }
           onClose={() => setAccessMember(null)}
         />
       )}

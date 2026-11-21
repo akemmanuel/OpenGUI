@@ -76,7 +76,9 @@ describe("InstructionsSettings", () => {
 
     await userEvent.clear(editor);
     await userEvent.type(editor, " Prefer British spelling. ");
-    await userEvent.click(screen.getByRole("button", { name: "settings.instructions.save" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "settings.instructions.saveScope.host" }),
+    );
 
     await waitFor(() =>
       expect(fixture.host.setCustomInstructions).toHaveBeenCalledWith(" Prefer British spelling. "),
@@ -85,13 +87,16 @@ describe("InstructionsSettings", () => {
     expect((editor as HTMLTextAreaElement).value).toBe("Prefer British spelling.");
   });
 
-  test("keeps personal preferences out of shared settings", async () => {
+  test("opens the personal editor only when its scope is selected", async () => {
     render(<InstructionsSettings />);
     await screen.findByLabelText("settings.instructions.label");
-    expect(
-      screen.queryByRole("button", { name: "settings.instructions.scope.personal" }),
-    ).toBeNull();
     expect(fixture.host.getPersonalInstructions).not.toHaveBeenCalled();
+    await userEvent.click(
+      screen.getByRole("button", { name: "settings.instructions.scope.personal" }),
+    );
+    expect(
+      ((await screen.findByLabelText("profile.personalInstructions")) as HTMLTextAreaElement).value,
+    ).toBe("My preferences");
   });
 
   test("edits private personal preferences independently from host text", async () => {
@@ -119,7 +124,9 @@ describe("InstructionsSettings", () => {
     expect((editor as HTMLTextAreaElement).value).toBe("Shared repo rules");
     await userEvent.clear(editor);
     await userEvent.type(editor, "Use the repo test suite");
-    await userEvent.click(screen.getByRole("button", { name: "settings.instructions.save" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "settings.instructions.saveScope.project" }),
+    );
     await waitFor(() =>
       expect(fixture.host.setProjectInstructions).toHaveBeenCalledWith(
         "/repo",
@@ -151,7 +158,6 @@ describe("InstructionsSettings", () => {
       teams: [],
     });
     render(<InstructionsSettings />);
-    await screen.findByLabelText("settings.instructions.label");
     await userEvent.click(
       screen.getByRole("button", { name: "settings.instructions.scope.project" }),
     );
@@ -191,12 +197,17 @@ describe("InstructionsSettings", () => {
     );
     const editor = await screen.findByLabelText("settings.instructions.label");
     await userEvent.type(editor, " unsaved");
-    await userEvent.click(screen.getByRole("button", { name: "settings.instructions.save" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "settings.instructions.saveScope.project" }),
+    );
     await waitFor(() => expect(fixture.notifyUnknownError).toHaveBeenCalled());
     expect((editor as HTMLTextAreaElement).value).toContain("unsaved");
     expect(
-      (screen.getByRole("button", { name: "settings.instructions.save" }) as HTMLButtonElement)
-        .disabled,
+      (
+        screen.getByRole("button", {
+          name: "settings.instructions.saveScope.project",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(false);
   });
 
@@ -217,10 +228,13 @@ describe("InstructionsSettings", () => {
     fixture.actor = { type: "user", id: "member", role: "member" };
     fixture.host.getCustomInstructions.mockResolvedValue("Always reply in Spanish.");
     render(<InstructionsSettings />);
+    await userEvent.click(screen.getByRole("button", { name: "settings.instructions.scope.host" }));
 
     const editor = await screen.findByLabelText("settings.instructions.label");
     expect((editor as HTMLTextAreaElement).disabled).toBe(true);
-    expect(screen.queryByRole("button", { name: "settings.instructions.save" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "settings.instructions.saveScope.host" }),
+    ).toBeNull();
     expect(screen.getByText("settings.instructions.readOnly")).toBeTruthy();
   });
 });

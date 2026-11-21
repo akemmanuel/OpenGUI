@@ -95,7 +95,13 @@ export function AccountMenu({
               <Settings className="size-3.5" />
             </span>
           )}
-          <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+          <span
+            className="min-w-0 flex-1 truncate text-left"
+            title={label}
+            data-responsive-allow="text-clip"
+          >
+            {label}
+          </span>
           <ChevronsUpDown className="text-muted-foreground" aria-hidden="true" />
         </SidebarMenuButton>
       </DropdownMenuTrigger>

@@ -56,8 +56,8 @@ function applyContrast(contrast: number, theme: Theme) {
     document.documentElement.style.setProperty("--dynamic-bg-l", bgL.toFixed(3));
     document.documentElement.style.setProperty("--dynamic-card-l", cardL.toFixed(3));
   } else {
-    // Light mode: contrast 0 → very slightly grey, contrast 50+ → pure white
-    const bgL = Math.min(1, 0.94 + (contrast / 100) * 0.06);
+    // Light mode runs from a soft gray to white.
+    const bgL = 0.97 + (contrast / 100) * 0.03;
     document.documentElement.style.setProperty("--dynamic-bg-l", bgL.toFixed(3));
     document.documentElement.style.setProperty("--dynamic-card-l", "1");
   }
@@ -79,7 +79,9 @@ function getReadableForeground({ r, g, b }: RGB) {
     return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
   };
   const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
-  return luminance > 0.45 ? "oklch(0.145 0 0)" : "oklch(0.985 0 0)";
+  const darkContrast = (luminance + 0.05) / (0.145 ** 3 + 0.05);
+  const lightContrast = (0.985 ** 3 + 0.05) / (luminance + 0.05);
+  return darkContrast > lightContrast ? "oklch(0.145 0 0)" : "oklch(0.985 0 0)";
 }
 
 function applyAccentColor(color: string) {

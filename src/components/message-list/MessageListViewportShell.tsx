@@ -52,7 +52,10 @@ export function MessageListViewportShell({
 
   if (viewport.kind === "empty") {
     return (
-      <div className={`${CENTERED_SHELL} overflow-y-auto`}>
+      <div
+        data-slot="empty-session"
+        className={`${CENTERED_SHELL} min-h-0 overflow-y-auto px-3 min-[375px]:px-4 md:px-8`}
+      >
         <EmptySessionOverview directory={directory} />
       </div>
     );

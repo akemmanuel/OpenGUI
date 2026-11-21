@@ -1,5 +1,14 @@
 import { AlertCircle, ArrowRight, RefreshCw } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useReducer, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useReducer,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import openguiLogoDark from "@/../assets/opengui-dark.svg";
 import openguiLogoLight from "@/../assets/opengui-light.svg";
@@ -13,10 +22,8 @@ import { createIdentityClient, IdentityRequestError } from "./identity-client";
 import type { IdentityActor } from "./identity-client";
 import { DESKTOP_LOCAL_ACTOR, IdentityActorProvider } from "./identity-actor-context";
 import { identityGateReducer, shouldBypassIdentity } from "./identity-state";
-import { EmailConfirmScreen } from "./EmailConfirmScreen";
 import { readEmailChangeToken } from "./email-confirm-url";
-import { InviteAcceptScreen } from "./InviteAcceptScreen";
-import { readViewLinkToken, ViewLinkScreen } from "./ViewLinkScreen";
+import { readViewLinkToken } from "./view-link-url";
 import { readInviteToken } from "./invite-url";
 import {
   getIdentityWorkspace,
@@ -24,13 +31,23 @@ import {
   WORKSPACE_IDENTITY_CHANGE_EVENT,
 } from "./workspace-identity";
 
+const EmailConfirmScreen = lazy(() =>
+  import("./EmailConfirmScreen").then((module) => ({ default: module.EmailConfirmScreen })),
+);
+const InviteAcceptScreen = lazy(() =>
+  import("./InviteAcceptScreen").then((module) => ({ default: module.InviteAcceptScreen })),
+);
+const ViewLinkScreen = lazy(() =>
+  import("./ViewLinkScreen").then((module) => ({ default: module.ViewLinkScreen })),
+);
+
 function IdentityShell({ children }: { children: ReactNode }) {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background p-4 text-foreground">
-      <section className="w-full max-w-sm" aria-live="polite">
-        <div className="mb-8 flex justify-center">
-          <img src={openguiLogoDark} alt="OpenGUI" className="hidden h-6 dark:block" />
-          <img src={openguiLogoLight} alt="OpenGUI" className="h-6 dark:hidden" />
+    <main className="flex min-h-dvh items-center justify-center bg-background px-5 py-10 text-foreground">
+      <section className="w-full min-w-0 max-w-[25rem] wrap-anywhere" aria-live="polite">
+        <div className="mb-7 flex items-center border-b pb-5">
+          <img src={openguiLogoDark} alt="OpenGUI" className="hidden h-5 dark:block" />
+          <img src={openguiLogoLight} alt="OpenGUI" className="h-5 dark:hidden" />
         </div>
         {children}
       </section>
@@ -121,13 +138,18 @@ function IdentityForm({
   return (
     <IdentityShell>
       <header className="mb-6 space-y-2">
-        <h1 className="text-xl font-semibold tracking-tight">{t(titleKey)}</h1>
+        <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight text-balance">
+          {t(titleKey)}
+        </h1>
         <p className="text-sm leading-6 text-muted-foreground">
           {t(descriptionKey, { host: hostName })}
         </p>
       </header>
 
-      <form className="space-y-4" onSubmit={(event) => void submit(event)}>
+      <form
+        className="space-y-4 [&_[data-slot=input]]:h-11 [&_[data-slot=input]]:bg-card"
+        onSubmit={(event) => void submit(event)}
+      >
         <div className="space-y-2">
           <Label htmlFor="identity-username">{t("identity.username")}</Label>
           <Input
@@ -162,12 +184,15 @@ function IdentityForm({
             type="password"
             autoComplete={needsAccountFields ? "new-password" : "current-password"}
             minLength={8}
+            aria-describedby={needsAccountFields ? "identity-password-hint" : undefined}
             required
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
           {needsAccountFields && (
-            <p className="text-xs leading-5 text-muted-foreground">{t("identity.passwordHint")}</p>
+            <p id="identity-password-hint" className="text-xs leading-5 text-muted-foreground">
+              {t("identity.passwordHint")}
+            </p>
           )}
         </div>
         {needsAccountFields && (
@@ -223,7 +248,7 @@ function IdentityForm({
           )}
         </p>
       )}
-      <p className="mt-5 text-center text-xs text-muted-foreground">
+      <p className="mt-6 border-t pt-4 text-xs text-muted-foreground wrap-anywhere">
         {t("identity.hostLabel", { host: hostName })}
       </p>
     </IdentityShell>
@@ -327,10 +352,18 @@ function IdentityGateContent({
   }, [bypass, onActorChange, retryKey, t, workspace]);
 
   if (emailChangeToken && workspace && !bypass) {
-    return <EmailConfirmScreen token={emailChangeToken} workspace={workspace} />;
+    return (
+      <Suspense fallback={<IdentityLoading />}>
+        <EmailConfirmScreen token={emailChangeToken} workspace={workspace} />
+      </Suspense>
+    );
   }
   if (inviteToken && workspace && !bypass) {
-    return <InviteAcceptScreen token={inviteToken} workspace={workspace} />;
+    return (
+      <Suspense fallback={<IdentityLoading />}>
+        <InviteAcceptScreen token={inviteToken} workspace={workspace} />
+      </Suspense>
+    );
   }
   if (bypass) return children;
   if (!workspace || (state.status === "checking" && !authorizedWorkspaceId)) {
@@ -342,7 +375,7 @@ function IdentityGateContent({
       <IdentityShell>
         <div className="space-y-5 text-center">
           <div className="space-y-2">
-            <h1 className="text-xl font-semibold tracking-tight">
+            <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight text-balance">
               {t("identity.unavailableTitle")}
             </h1>
             <p className="text-sm leading-6 text-muted-foreground">
@@ -422,7 +455,12 @@ export function IdentityGate({ children }: { children: ReactNode }) {
       : null;
   });
 
-  if (viewToken) return <ViewLinkScreen token={viewToken} />;
+  if (viewToken)
+    return (
+      <Suspense fallback={<IdentityLoading />}>
+        <ViewLinkScreen token={viewToken} />
+      </Suspense>
+    );
 
   return (
     <IdentityActorProvider actor={actor}>

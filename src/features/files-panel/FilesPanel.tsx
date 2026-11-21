@@ -1,10 +1,12 @@
 import {
+  ArrowLeft,
   Check,
   ChevronLeft,
   ChevronRight,
   Copy,
   Download,
   FolderOpen,
+  GripVertical,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -17,7 +19,9 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
@@ -123,7 +127,7 @@ function HeaderButton({
     <Button
       variant="ghost"
       size="icon-sm"
-      className="shrink-0 text-muted-foreground hover:text-foreground"
+      className="shrink-0 max-md:size-11 text-muted-foreground hover:text-foreground"
       aria-label={label}
       title={label}
       disabled={disabled}
@@ -140,6 +144,7 @@ function FileView({
   path,
   line,
   refreshKey,
+  isMobile,
   header,
 }: {
   panel: FilesPanelContextValue;
@@ -147,6 +152,7 @@ function FileView({
   path: string;
   line: number | null;
   refreshKey: string;
+  isMobile: boolean;
   header: (actions: React.ReactNode) => React.ReactNode;
 }) {
   const { t, i18n } = useTranslation();
@@ -159,6 +165,7 @@ function FileView({
     client,
   );
   const file = stat.status === "error" ? null : stat.data;
+  const status = file ? previewStatus(file, i18n.language, t) : null;
 
   useEffect(() => {
     if (!copied) return;
@@ -177,16 +184,34 @@ function FileView({
 
   const actions = (
     <>
-      <HeaderButton label={t("filesPanel.download")} onClick={download} disabled={!file}>
-        <Download />
-      </HeaderButton>
+      {!isMobile && (
+        <HeaderButton label={t("filesPanel.download")} onClick={download} disabled={!file}>
+          <Download />
+        </HeaderButton>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={<Button variant="ghost" size="icon-sm" aria-label={t("filesPanel.more")} />}
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="max-md:size-11"
+              aria-label={t("filesPanel.more")}
+            />
+          }
         >
           <MoreHorizontal />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {isMobile && (
+            <DropdownMenuGroup>
+              {status && <DropdownMenuLabel>{status.summary}</DropdownMenuLabel>}
+              <DropdownMenuItem onClick={download} disabled={!file}>
+                <Download />
+                {t("filesPanel.download")}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          )}
           <DropdownMenuItem
             onClick={() => {
               void copyTextToClipboard(file?.path ?? path).then(() => setCopied(true));
@@ -208,16 +233,17 @@ function FileView({
               {t("filesPanel.showInFolder")}
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem onClick={() => panel.setExpanded(!panel.expanded)}>
-            {panel.expanded ? <Minimize2 /> : <Maximize2 />}
-            {panel.expanded ? t("filesPanel.collapse") : t("filesPanel.expand")}
-          </DropdownMenuItem>
+          {!isMobile && (
+            <DropdownMenuItem onClick={() => panel.setExpanded(!panel.expanded)}>
+              {panel.expanded ? <Minimize2 /> : <Maximize2 />}
+              {panel.expanded ? t("filesPanel.collapse") : t("filesPanel.expand")}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </>
   );
 
-  const status = file ? previewStatus(file, i18n.language, t) : null;
   return (
     <>
       {header(actions)}
@@ -241,9 +267,9 @@ function FileView({
           onDownload={download}
         />
       )}
-      {status && (
-        <div className="flex shrink-0 flex-wrap justify-between gap-x-3 border-t border-border px-3.5 py-1.5 text-xs text-muted-foreground">
-          <span>{status.summary}</span>
+      {status && (!isMobile || status.note) && (
+        <div className="flex shrink-0 flex-wrap justify-between gap-x-3 border-t border-border bg-card/65 px-3.5 py-2 text-xs text-muted-foreground">
+          {!isMobile && <span>{status.summary}</span>}
           {status.note && <span>{status.note}</span>}
         </div>
       )}
@@ -291,7 +317,7 @@ function ResizeHandle({ panel }: { panel: FilesPanelContextValue }) {
       aria-valuemax={FILES_PANEL_MAX_WIDTH_PX}
       aria-valuenow={panel.width}
       tabIndex={0}
-      className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:transition-colors hover:after:bg-border focus-visible:after:bg-ring data-[dragging=true]:after:bg-ring"
+      className="absolute inset-y-0 -left-1 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:transition-colors hover:after:bg-border focus-visible:after:bg-ring data-[dragging=true]:after:bg-ring"
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       onPointerDown={(event) => {
         if (event.button !== 0 || dragRef.current) return;
@@ -346,7 +372,14 @@ function ResizeHandle({ panel }: { panel: FilesPanelContextValue }) {
         else return;
         event.preventDefault();
       }}
-    />
+    >
+      <span
+        aria-hidden="true"
+        className="z-10 flex h-8 w-3.5 shrink-0 items-center justify-center rounded-sm border border-input bg-muted text-foreground"
+      >
+        <GripVertical className="size-3" />
+      </span>
+    </div>
   );
 }
 
@@ -366,54 +399,99 @@ export function FilesPanel() {
   if (!panel?.open || !panel.root || !client) return null;
   const root = panel.root;
   const location: FilesPanelLocation = panel.location ?? { kind: "folder", path: root };
-
-  const header = (actions?: React.ReactNode) => (
-    <div className="flex h-11 shrink-0 items-center gap-0.5 border-b border-border px-1.5">
-      <HeaderButton label={t("filesPanel.back")} onClick={panel.back} disabled={!panel.canGoBack}>
-        <ChevronLeft />
-      </HeaderButton>
-      <HeaderButton
-        label={t("filesPanel.forward")}
-        onClick={panel.forward}
-        disabled={!panel.canGoForward}
-      >
-        <ChevronRight />
-      </HeaderButton>
-      <div className="ml-1 flex min-w-0 flex-1">
-        <Breadcrumb root={root} location={location} onNavigate={panel.navigate} />
-      </div>
-      {actions}
-      <HeaderButton label={t("filesPanel.close")} onClick={() => panel.setOpen(false)}>
-        <X />
-      </HeaderButton>
-    </div>
+  const showingFile = location.kind === "file";
+  const folder = panel.folderPath ?? root;
+  const backToFilesButton = (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="text-primary max-md:min-h-11 md:ml-auto"
+      onClick={panel.backToFiles}
+    >
+      <ArrowLeft />
+      {t("filesPanel.backToFiles")}
+    </Button>
   );
 
-  const content =
-    location.kind === "file" ? (
-      <FileView
-        key={location.path}
-        panel={panel}
-        client={client}
-        path={location.path}
-        line={location.line}
-        refreshKey={refreshKey}
-        header={header}
-      />
-    ) : (
-      <>
-        {header()}
-        <FolderView
+  const header = (actions?: React.ReactNode) => (
+    <header className="shrink-0 border-b bg-card/65">
+      <div
+        className={cn(
+          "flex min-h-11 items-center gap-1 px-3",
+          (!isMobile || !showingFile) && "border-b",
+        )}
+      >
+        {isMobile && showingFile && backToFilesButton}
+        <h2
+          className="min-w-0 flex-1 truncate text-sm font-semibold"
+          title={showingFile ? hostBasename(location.path) : undefined}
+        >
+          {showingFile ? hostBasename(location.path) : t("filesPanel.projectFiles")}
+        </h2>
+        {actions}
+        {!isMobile && (
+          <HeaderButton label={t("filesPanel.close")} onClick={() => panel.setOpen(false)}>
+            <X />
+          </HeaderButton>
+        )}
+      </div>
+      {(!isMobile || !showingFile) && (
+        <div className="flex min-h-10 items-center gap-0.5 px-2">
+          <HeaderButton
+            label={t("filesPanel.back")}
+            onClick={panel.back}
+            disabled={!panel.canGoBack}
+          >
+            <ChevronLeft />
+          </HeaderButton>
+          <HeaderButton
+            label={t("filesPanel.forward")}
+            onClick={panel.forward}
+            disabled={!panel.canGoForward}
+          >
+            <ChevronRight />
+          </HeaderButton>
+          <div className="ml-1 flex min-w-0 flex-1">
+            {showingFile ? (
+              backToFilesButton
+            ) : (
+              <Breadcrumb root={root} location={location} onNavigate={panel.navigate} />
+            )}
+          </div>
+        </div>
+      )}
+    </header>
+  );
+
+  const content = (
+    <>
+      {location.kind === "file" ? (
+        <FileView
           key={location.path}
+          panel={panel}
+          client={client}
+          path={location.path}
+          line={location.line}
+          refreshKey={refreshKey}
+          isMobile={isMobile}
+          header={header}
+        />
+      ) : (
+        header()
+      )}
+      <div className={showingFile ? "hidden" : "flex min-h-0 flex-1"}>
+        <FolderView
+          key={folder}
           client={client}
           root={root}
-          path={location.path}
+          path={folder}
           chatFiles={panel.chatFiles}
           refreshKey={refreshKey}
           onNavigate={panel.navigate}
         />
-      </>
-    );
+      </div>
+    </>
+  );
 
   if (isMobile) {
     return (
@@ -426,6 +504,16 @@ export function FilesPanel() {
         >
           <SheetTitle className="sr-only">{t("filesPanel.title")}</SheetTitle>
           {content}
+          <div className="shrink-0 border-t bg-card px-3 py-2">
+            <Button
+              className="min-h-11 w-full"
+              variant="outline"
+              onClick={() => panel.setOpen(false)}
+            >
+              <ArrowLeft />
+              {t("settings.backToChat")}
+            </Button>
+          </div>
         </SheetContent>
       </Sheet>
     );

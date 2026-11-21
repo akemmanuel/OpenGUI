@@ -11,6 +11,7 @@ polyfillLocalStorage();
 const fixture = vi.hoisted(() => ({
   upsert: vi.fn().mockResolvedValue(undefined),
   refresh: vi.fn().mockResolvedValue(undefined),
+  connect: vi.fn().mockResolvedValue(undefined),
   browse: vi.fn().mockResolvedValue("/srv/chosen"),
 }));
 
@@ -19,7 +20,8 @@ vi.mock("@/protocol/host-client", () => ({
   createHostClient: () => ({ upsertModelConnection: fixture.upsert }),
 }));
 vi.mock("@/hooks/use-agent-state", () => ({
-  useActions: () => ({ refreshProviders: fixture.refresh }),
+  useActions: () => ({ refreshProviders: fixture.refresh, connectToProject: fixture.connect }),
+  useModelState: () => ({ providers: [] }),
 }));
 vi.mock("@/shell/provider", () => ({
   useDesktopShell: () => ({
@@ -46,6 +48,10 @@ describe("SetupWizard journey", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.getByText("1 / 3")).toBeTruthy();
 
+    await userEvent.click(screen.getByRole("button", { name: "setupWizard.manualConnection" }));
+    await userEvent.type(screen.getByLabelText("setupWizard.baseUrl"), "https://provider.test/v1");
+    await userEvent.type(screen.getByLabelText("setupWizard.model"), "fixture-model");
+    await userEvent.type(screen.getByLabelText("setupWizard.optionalKey"), "fixture-key");
     await userEvent.click(screen.getByRole("button", { name: /setupWizard.continue/ }));
     await waitFor(() => expect(fixture.upsert).toHaveBeenCalledOnce());
     expect(fixture.refresh).toHaveBeenCalledOnce();
@@ -57,8 +63,9 @@ describe("SetupWizard journey", () => {
       (screen.getByPlaceholderText("setupWizard.folderPlaceholder") as HTMLInputElement).value,
     ).toBe("/srv/chosen");
     await userEvent.click(screen.getByRole("button", { name: /setupWizard.continue/ }));
-    await userEvent.click(screen.getByRole("button", { name: /setupWizard.openOpenGui/ }));
+    await userEvent.click(screen.getByRole("button", { name: /projectPath.openProject/ }));
 
+    expect(fixture.connect).toHaveBeenCalledWith("/srv/chosen");
     expect(localStorage.getItem(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY)).toBe("/srv/chosen");
     expect(localStorage.getItem(STORAGE_KEYS.SETUP_COMPLETE)).toBe("true");
     expect(onComplete).toHaveBeenCalledOnce();
@@ -66,8 +73,8 @@ describe("SetupWizard journey", () => {
 
   test("does not allow an invalid model endpoint to advance", async () => {
     render(<SetupWizard onComplete={vi.fn()} />);
-    const inputs = screen.getAllByRole("textbox") as HTMLInputElement[];
-    await userEvent.clear(inputs[0]!);
+    await userEvent.click(screen.getByRole("button", { name: "setupWizard.manualConnection" }));
+    await userEvent.type(screen.getByLabelText("setupWizard.model"), "fixture-model");
     const continueButton = screen.getByRole("button", { name: /setupWizard.continue/ });
 
     expect(continueButton.hasAttribute("disabled")).toBe(true);

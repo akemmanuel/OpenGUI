@@ -16,6 +16,8 @@ import type {
 
 /** OpenCode Zen serves its free models without an API key. */
 const KEYLESS_PROVIDER_ID = "opencode";
+const INITIAL_PROVIDER_ROWS = 8;
+const DEFAULT_PROVIDER_ORDER = ["openai", "anthropic", "google"];
 
 type ActiveLogin = {
   provider: HostProviderInfo;
@@ -30,6 +32,7 @@ export function ProviderDirectory({
   allowApiKeys,
   allowSubscriptions,
   showScope,
+  setupMode = false,
   onChanged,
 }: {
   host: Pick<
@@ -46,22 +49,37 @@ export function ProviderDirectory({
   allowSubscriptions: boolean;
   /** Label connections as Host or Personal (multi-user Hosts only). */
   showScope: boolean;
+  setupMode?: boolean;
   onChanged: () => Promise<unknown>;
 }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [login, setLogin] = useState<ActiveLogin | null>(null);
+  const [showAllProviders, setShowAllProviders] = useState(false);
   const connected = providers.filter((provider) => provider.connection);
   const available = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return providers.filter(
+    const matches = providers.filter(
       (provider) =>
         !provider.connection &&
         (!needle ||
           provider.name.toLowerCase().includes(needle) ||
           provider.id.toLowerCase().includes(needle)),
     );
-  }, [providers, query]);
+    if (needle) return matches;
+    const ordered = [
+      ...DEFAULT_PROVIDER_ORDER.flatMap((id) => matches.filter((provider) => provider.id === id)),
+      ...matches.filter((provider) => !DEFAULT_PROVIDER_ORDER.includes(provider.id)),
+    ];
+    return setupMode && allowSubscriptions
+      ? ordered.toSorted(
+          (a, b) => Number(!!b.oauth?.subscription) - Number(!!a.oauth?.subscription),
+        )
+      : ordered;
+  }, [allowSubscriptions, providers, query, setupMode]);
+  const rowLimit = setupMode ? 3 : INITIAL_PROVIDER_ROWS;
+  const limited = !query.trim() && !showAllProviders && available.length > rowLimit;
+  const shownProviders = limited ? available.slice(0, rowLimit) : available;
 
   const methods = (provider: HostProviderInfo) => ({
     apiKey: Boolean(provider.apiKey?.interactive) && allowApiKeys,
@@ -90,20 +108,34 @@ export function ProviderDirectory({
 
   const signInButtons = (provider: HostProviderInfo) => {
     const allowed = methods(provider);
+    const oauthLabel = t(
+      provider.id === "claude-code"
+        ? "providers.directory.claudeCodeSignIn"
+        : provider.oauth?.subscription
+          ? "providers.directory.subscription"
+          : "providers.directory.signIn",
+    );
+    const keyLabel = t(
+      provider.id === KEYLESS_PROVIDER_ID
+        ? "providers.directory.apiKeyOrFree"
+        : "providers.directory.apiKey",
+    );
     return (
-      <div className="flex shrink-0 flex-wrap justify-end gap-1">
+      <div className="flex shrink-0 flex-wrap justify-end gap-1 max-sm:basis-full max-sm:justify-start min-[360px]:max-sm:pl-7">
         {allowed.oauth && (
           <Button
             type="button"
             size="sm"
             variant="outline"
-            aria-label={t("providers.directory.signInNamed", { name: provider.name })}
+            className="max-sm:min-h-11 max-sm:min-w-11"
+            aria-label={t("providers.directory.actionNamed", {
+              action: oauthLabel,
+              name: provider.name,
+            })}
             onClick={() => void begin(provider, "oauth")}
           >
             <LogIn />
-            {provider.oauth?.subscription
-              ? t("providers.directory.subscription")
-              : t("providers.directory.signIn")}
+            {oauthLabel}
           </Button>
         )}
         {allowed.apiKey && (
@@ -111,13 +143,15 @@ export function ProviderDirectory({
             type="button"
             size="sm"
             variant="outline"
-            aria-label={t("providers.directory.apiKeyNamed", { name: provider.name })}
+            className="max-sm:min-h-11 max-sm:min-w-11"
+            aria-label={t("providers.directory.actionNamed", {
+              action: keyLabel,
+              name: provider.name,
+            })}
             onClick={() => void begin(provider, "api_key")}
           >
             <KeyRound />
-            {provider.id === KEYLESS_PROVIDER_ID
-              ? t("providers.directory.apiKeyOrFree")
-              : t("providers.directory.apiKey")}
+            {keyLabel}
           </Button>
         )}
       </div>
@@ -126,60 +160,63 @@ export function ProviderDirectory({
 
   return (
     <div className="space-y-5">
-      <section className="space-y-3">
-        <h3 className="font-medium">{t("providers.directory.connectedTitle")}</h3>
-        {connected.length === 0 ? (
-          <p className="rounded-lg bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
-            {t("providers.directory.connectedEmpty")}
-          </p>
-        ) : (
-          <div className="divide-y rounded-lg border">
-            {connected.map((provider) => {
-              const connection = provider.connection!;
-              return (
-                <div key={provider.id} className="flex items-center gap-3 px-3 py-2">
-                  <ProviderIcon provider={provider.id} className="size-4 shrink-0" />
-                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-medium" title={provider.name}>
-                      {provider.name}
-                    </span>
-                    <Badge variant="outline">
-                      {connection.authType === "oauth"
-                        ? t("providers.directory.authOAuth")
-                        : t("providers.directory.authApiKey")}
-                    </Badge>
-                    {showScope && (
+      {(connected.length > 0 || !(allowApiKeys || allowSubscriptions)) && (
+        <section className="space-y-3">
+          <h3 className="font-medium">{t("providers.directory.connectedTitle")}</h3>
+          {connected.length === 0 ? (
+            <p className="rounded-lg bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
+              {t("providers.directory.connectedEmpty")}
+            </p>
+          ) : (
+            <div className="divide-y rounded-lg border">
+              {connected.map((provider) => {
+                const connection = provider.connection!;
+                return (
+                  <div key={provider.id} className="flex items-center gap-3 px-3 py-2">
+                    <ProviderIcon provider={provider.id} className="size-4 shrink-0" />
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-medium" title={provider.name}>
+                        {provider.name}
+                      </span>
                       <Badge variant="outline">
-                        {t(`providers.planes.${connection.personal ? "user" : "host"}`)}
+                        {connection.authType === "oauth"
+                          ? t("providers.directory.authOAuth")
+                          : t("providers.directory.authApiKey")}
                       </Badge>
+                      {showScope && (
+                        <Badge variant="outline">
+                          {t(`providers.planes.${connection.personal ? "user" : "host"}`)}
+                        </Badge>
+                      )}
+                    </div>
+                    {(canManageShared || connection.personal) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-label={t("providers.disconnectNamed", { name: provider.name })}
+                        onClick={() => void disconnect(provider)}
+                      >
+                        {t("providers.disconnect")}
+                      </Button>
                     )}
                   </div>
-                  {(canManageShared || connection.personal) && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      aria-label={t("providers.disconnectNamed", { name: provider.name })}
-                      onClick={() => void disconnect(provider)}
-                    >
-                      {t("providers.disconnect")}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {(allowApiKeys || allowSubscriptions) && (
         <section className="space-y-3">
-          <div>
+          {setupMode ? (
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {t("providers.directory.addTitle")}
+            </h1>
+          ) : (
             <h3 className="font-medium">{t("providers.directory.addTitle")}</h3>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {t("providers.directory.addHelp")}
-            </p>
-          </div>
+          )}
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -190,22 +227,30 @@ export function ProviderDirectory({
               placeholder={t("providers.searchPlaceholder")}
             />
           </div>
-          <div className="max-h-96 divide-y overflow-y-auto rounded-lg border">
+          <div className="divide-y rounded-lg border bg-card">
             {available.length === 0 && (
               <p className="px-3 py-4 text-sm text-muted-foreground">
                 {t("providers.noProvidersFound", { query: query.trim() })}
               </p>
             )}
-            {available.map((provider) => (
-              <div key={provider.id} className="flex items-center gap-3 px-3 py-2">
+            {shownProviders.map((provider) => (
+              <div
+                key={provider.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5"
+              >
                 <ProviderIcon provider={provider.id} className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-sm" title={provider.name}>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium" title={provider.name}>
                   {provider.name}
                 </span>
                 {signInButtons(provider)}
               </div>
             ))}
           </div>
+          {limited && (
+            <Button variant="outline" onClick={() => setShowAllProviders(true)}>
+              {t("providers.directory.showAll", { count: available.length })}
+            </Button>
+          )}
         </section>
       )}
 

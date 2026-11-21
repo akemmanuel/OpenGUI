@@ -47,7 +47,7 @@ export function DesktopSettings() {
       {shell.backend && (
         <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <p className="text-sm font-medium">{t("settings.general.restartLocalBackendTitle")}</p>
+            <p className="text-sm font-medium">{t("settings.general.maintenance")}</p>
             <p className="max-w-[60ch] text-xs text-muted-foreground">
               {t("settings.general.restartLocalBackendDescription")}
             </p>

@@ -25,6 +25,21 @@ describe("Queue drag handle", () => {
 });
 
 describe("queued prompt actions", () => {
+  test("expands a queued message from the keyboard", async () => {
+    render(
+      <QueueList
+        items={[{ id: "one", text: "Review the launch notes\nThen check the open issues." }]}
+      />,
+    );
+    const message = screen.getByRole("button", { name: /Review the launch notes/ });
+    expect(message.getAttribute("aria-expanded")).toBe("false");
+
+    message.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(message.getAttribute("aria-expanded")).toBe("true");
+    expect(message.textContent).toContain("Then check the open issues.");
+  });
+
   test("edits trimmed text, sends, removes, and exposes mode metadata", async () => {
     const onEdit = vi.fn();
     const onSendNow = vi.fn();

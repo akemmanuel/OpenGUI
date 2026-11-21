@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 
 const fixture = vi.hoisted(() => ({ resolve: vi.fn() }));
 
-vi.mock("./identity-client", () => ({
+vi.mock("./identity-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./identity-client")>()),
   createIdentityClient: () => ({ resolveSessionViewLink: fixture.resolve }),
 }));
 vi.mock("@/components/MarkdownRenderer", () => ({
@@ -18,7 +19,9 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import { readViewLinkToken, ViewLinkScreen } from "./ViewLinkScreen";
+import { ViewLinkScreen } from "./ViewLinkScreen";
+import { IdentityRequestError } from "./identity-client";
+import { readViewLinkToken } from "./view-link-url";
 
 const snapshot = (title: string, entries: Array<Record<string, unknown>> = []) => ({
   id: `session-${title}`,
@@ -83,5 +86,15 @@ describe("ViewLinkScreen", () => {
     staleResolve({ session: snapshot("Stale") });
     await waitFor(() => expect(screen.queryByText("Stale")).toBeNull());
     view.unmount();
+  });
+
+  test("asks for a new link when the Host confirms it is unavailable", async () => {
+    fixture.resolve.mockRejectedValueOnce(
+      new IdentityRequestError("expired", 410, "VIEW_LINK_INVALID"),
+    );
+    render(<ViewLinkScreen token="expired" />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("viewLink.invalid");
+    expect(screen.queryByRole("button", { name: "common.retry" })).toBeNull();
   });
 });

@@ -263,7 +263,7 @@ function SidebarResizeHandle() {
       tabIndex={0}
       title={t("workspace.resizeSidebar")}
       data-slot="sidebar-resize-handle"
-      className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:bg-transparent after:transition-colors hover:after:bg-sidebar-border focus-visible:after:bg-ring data-[dragging=true]:after:bg-ring"
+      className="absolute inset-y-0 right-0 z-20 w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:right-0 after:w-0.5 after:bg-transparent after:transition-colors hover:after:bg-sidebar-border focus-visible:after:bg-ring data-[dragging=true]:after:bg-ring"
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       onPointerDown={(event) => {
         if (event.button !== 0) return;

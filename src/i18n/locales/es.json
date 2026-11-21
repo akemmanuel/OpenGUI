@@ -63,7 +63,9 @@
     "discardTitle": "¿Descartar los cambios sin guardar?",
     "discardHelp": "Tus cambios aún no se han guardado.",
     "keepEditing": "Seguir editando",
-    "discard": "Descartar cambios"
+    "discard": "Descartar cambios",
+    "manageFolders": "Editar permisos de carpetas",
+    "noFolders": "Esta cuenta no tiene acceso directo a ninguna carpeta."
   },
   "teams": {
     "search": "Buscar equipos",
@@ -199,7 +201,7 @@
       "users": "Invita a personas y gestiona sus roles del Host.",
       "paths": "Elige qué carpetas pueden leer y modificar las personas desde OpenGUI.",
       "host": "Restricciones del Host, registro y claves de automatización.",
-      "instructions": "Reglas que el agente sigue en este Host y en los proyectos compartidos. Tus preferencias personales están en tu perfil, en la barra lateral.",
+      "instructions": "Define las instrucciones que sigue el agente para ti, un proyecto o todo el Host.",
       "skills": "Instrucciones reutilizables disponibles para el agente.",
       "teams": "Agrupa personas y gestiona su acceso.",
       "desktop": "Dónde empiezan los chats nuevos y qué apps abren archivos y terminales en este equipo.",
@@ -235,7 +237,12 @@
       "save": "Guardar instrucciones",
       "saved": "Instrucciones personalizadas guardadas",
       "loadFailed": "No se pudieron cargar las instrucciones personalizadas.",
-      "characterCount": "{{count}} / {{max}} caracteres"
+      "characterCount": "{{count}} / {{max}} caracteres",
+      "saveScope": {
+        "host": "Guardar instrucciones del Host",
+        "project": "Guardar instrucciones del proyecto",
+        "personal": "Guardar instrucciones personales"
+      }
     },
     "general": {
       "chatWidth": "Ancho del chat",
@@ -258,7 +265,7 @@
       "language": "Idioma",
       "defaultChatDirectory": "Directorio de chat predeterminado",
       "defaultChatDirectoryHelp": "Los chats nuevos empiezan en este directorio de trabajo.",
-      "newChatModelBehavior": "Modelo LLM para chats nuevos",
+      "newChatModelBehavior": "Modelo predeterminado para nuevos chats",
       "newChatModelAsk": "Elegir cada vez",
       "newChatModelLast": "Usar el último modelo LLM",
       "newChatModelWorkspaceDefault": "Usar predeterminado del espacio de trabajo",
@@ -279,7 +286,8 @@
       "theme": "Tema",
       "olderThan": "Con más de",
       "blockedByBrowserHelp": "Permite las notificaciones de este sitio en la configuración del navegador para activarlas.",
-      "fontSize": "Tamaño de fuente"
+      "fontSize": "Tamaño de fuente",
+      "maintenance": "Mantenimiento del Host local"
     },
     "groups": {
       "agent": "Agente",
@@ -288,6 +296,7 @@
       "personal": "Personal"
     },
     "backToChat": "Volver al chat",
+    "backToSetup": "Volver a la configuración",
     "version": "OpenGUI {{version}}",
     "codexTools": {
       "title": "Herramientas de ChatGPT",
@@ -324,7 +333,7 @@
     "pinned": "Fijado",
     "projects": "Proyectos",
     "addProject": "Añadir proyecto",
-    "searchPlaceholder": "Buscar proyectos y sesiones...",
+    "searchPlaceholder": "Buscar chats y proyectos",
     "showLess": "Mostrar menos",
     "title": "Barra lateral",
     "mobileDescription": "Muestra la barra lateral móvil.",
@@ -392,10 +401,13 @@
     "steerTitle": "Guiar: esperar a que termine la parte actual del modelo y luego enviar (Ctrl/Cmd+D para alternar)",
     "queue": "Cola",
     "steer": "Guiar",
-    "stop": "Detener",
-    "stopGenerating": "Detener generación",
+    "stop": "Detener ejecución",
+    "stopGenerating": "Detener la ejecución actual",
+    "stopCompact": "Detener",
     "send": "Enviar",
-    "sendMessage": "Enviar mensaje"
+    "sendMessage": "Enviar mensaje",
+    "firstMessage": "Pregunta sobre este proyecto…",
+    "modelRequired": "Necesitas un modelo para enviar mensajes."
   },
   "reasoningEffort": {
     "label": "Esfuerzo de razonamiento",
@@ -409,14 +421,19 @@
       "xhigh": "Muy alto",
       "max": "Máximo",
       "ultra": "Ultra"
-    }
+    },
+    "compactTitle": "Razonamiento: {{effort}}"
   },
   "modelSelector": {
     "dialogTitle": "Elegir modelo",
     "searchPlaceholder": "Buscar proveedor, modelo o ID...",
     "recent": "Recientes",
     "noModelsAvailable": "No hay modelos disponibles.",
-    "noModelsMatch": "Ningún modelo coincide con \"{{query}}\"."
+    "noModelsMatch": "Ningún modelo coincide con \"{{query}}\".",
+    "connectModelHelp": "Conecta un proveedor en Ajustes antes de enviar tu primer mensaje.",
+    "askHostHelp": "Pide al propietario del Host que comparta un modelo con tu cuenta.",
+    "openModelSettings": "Abrir los ajustes de modelos",
+    "setupModel": "Configurar un modelo"
   },
   "compaction": {
     "inProgress": "Preparando la transferencia de contexto…",
@@ -484,8 +501,8 @@
   },
   "identity": {
     "checkingHost": "Comprobando la identidad del Host",
-    "setupTitle": "Configurar este Host",
-    "setupDescription": "Crea la primera cuenta para {{host}}. Esta cuenta será la propietaria del Host y de sus ajustes.",
+    "setupTitle": "Crear la cuenta de propietario",
+    "setupDescription": "El propietario gestiona los modelos, los proyectos y el acceso a este Host.",
     "loginTitle": "Iniciar sesión en OpenGUI",
     "loginDescription": "Introduce los datos de tu cuenta para usar {{host}}.",
     "registerTitle": "Crear una cuenta",
@@ -521,7 +538,7 @@
     "accountSession": "Cuenta del Host",
     "signOut": "Cerrar sesión",
     "signingOut": "Cerrando sesión…",
-    "hostLabel": "Conectando con {{host}}",
+    "hostLabel": "Host {{host}}",
     "unavailableTitle": "Host no disponible",
     "unavailableDescription": "OpenGUI no pudo comprobar el estado de identidad de {{host}}.",
     "connectionError": "No se pudo conectar con el Host.",
@@ -748,17 +765,17 @@
     "directory": {
       "connectedTitle": "Proveedores conectados",
       "connectedEmpty": "Todavía no hay proveedores conectados. Añade uno abajo.",
-      "addTitle": "Añadir un proveedor",
-      "addHelp": "Inicia sesión con una suscripción o pega una clave de API. Los modelos aparecen en cuanto el proveedor está conectado.",
+      "addTitle": "Conectar un proveedor",
       "signIn": "Iniciar sesión",
-      "signInNamed": "Iniciar sesión en {{name}}",
+      "actionNamed": "{{action}} para {{name}}",
       "subscription": "Usar suscripción",
+      "claudeCodeSignIn": "Usar Claude Code",
       "apiKey": "Clave de API",
       "apiKeyOrFree": "Clave de API o gratis",
-      "apiKeyNamed": "Añadir una clave de API para {{name}}",
       "authOAuth": "Sesión iniciada",
       "authApiKey": "Clave de API",
-      "freeTierHint": "Déjalo en blanco para usar los modelos gratuitos de OpenCode Zen sin cuenta."
+      "freeTierHint": "Déjalo en blanco para usar los modelos gratuitos de OpenCode Zen sin cuenta.",
+      "showAll": "Mostrar los {{count}} proveedores"
     },
     "login": {
       "title": "Conectar {{name}}",
@@ -844,8 +861,8 @@
     "credentialsConcept": "BYOK y BYOS",
     "credentialsConceptHelp": "BYOK usa una clave API; BYOS conecta una suscripción válida. Ambas credenciales siguen siendo privadas.",
     "offeringsTitle": "Ofertas de modelos",
-    "offeringsHelp": "Publica un nombre y slug estables para un modelo y concédelo a todos o a usuarios concretos.",
-    "noOfferings": "Aún no hay ofertas de modelos. Crea una para ofrecer un menú claro.",
+    "offeringsHelp": "Añade un modelo con nombre y compártelo en «Gestionar acceso».",
+    "noOfferings": "Aún no se han añadido modelos.",
     "offeringNamePlaceholder": "Nombre visible, p. ej. Modelo de empresa",
     "offeringSlugPlaceholder": "slug, p. ej. modelo-empresa",
     "chooseBackend": "Elegir backend",
@@ -855,17 +872,17 @@
     "editOffering": "Editar {{name}}",
     "removeOffering": "Eliminar {{name}}",
     "everyone": "Todos en este Host",
-    "customBackendsTitle": "Backends personalizados",
-    "customBackendTitle": "Backend personalizado compatible con OpenAI",
-    "customBackendHelp": "Añade un endpoint una vez y enumera todos los modelos compatibles, uno por línea o separados por comas.",
+    "customBackendsTitle": "Endpoints propios",
+    "customBackendTitle": "Endpoint propio compatible con OpenAI",
+    "customBackendHelp": "Añade un endpoint y sus IDs de modelo.",
     "backendNamePlaceholder": "Nombre del backend",
     "modelIdsPlaceholder": "IDs de modelos, uno por línea",
-    "backendName": "Nombre del backend",
-    "addBackend": "Añadir backend personalizado",
-    "saveBackend": "Guardar backend",
-    "savingBackend": "Guardando backend…",
+    "backendName": "Nombre del endpoint",
+    "addBackend": "Añadir endpoint propio",
+    "saveBackend": "Guardar endpoint",
+    "savingBackend": "Guardando endpoint…",
     "editConnection": "Editar {{name}}",
-    "noCustomBackends": "Aún no hay backends personalizados. Añade aquí un endpoint y todos sus modelos compatibles.",
+    "noCustomBackends": "Aún no hay endpoints propios.",
     "keepCredentialPlaceholder": "Déjalo vacío para conservar la credencial guardada",
     "credentialCustodyHelp": "El proceso del Host custodia este secreto. Nunca se devuelve en listas ni se muestra a colaboradores.",
     "upstreamModels": "Modelos upstream",
@@ -889,7 +906,7 @@
     }
   },
   "skillsSettings": {
-    "aboutTitle": "Instrucciones y recursos de trabajo, no plugins ejecutables",
+    "aboutTitle": "Acerca de las Skills",
     "aboutDescription": "Las Skills agrupan instrucciones, referencias y archivos de apoyo para el agente. Instalar una Skill no instala un plugin ejecutable ni ejecuta un comando de shell.",
     "sessionPins": "Las Sessions existentes conservan exactamente las revisiones de Skills con las que comenzaron. Las actualizaciones se aplican a Sessions nuevas para mantener reproducible el trabajo en curso.",
     "viewsLabel": "Vistas de la biblioteca de Skills",
@@ -911,8 +928,6 @@
     "selectProjectReadOnly": "Selecciona un proyecto para ver las Skills de Proyecto y Host disponibles allí.",
     "empty": "Todavía no hay Skills instaladas en este ámbito.",
     "noResults": "Ninguna Skill instalada coincide con la búsqueda.",
-    "installTitle": "Instalar una Skill de GitHub revisada",
-    "installDescription": "OpenGUI acepta el formato de fuente de GitHub documentado, valida el árbol de la Skill y resuelve referencias mutables a un commit inmutable antes de publicarlo.",
     "chooseScope": "Ámbito de instalación",
     "scopeHelp": {
       "project": "Disponible solo en el proyecto seleccionado y guardada con su configuración.",
@@ -923,11 +938,7 @@
     "repositorySource": "Fuente de GitHub",
     "reviewInstall": "Revisar instalación",
     "invalidSource": "Usa github:OWNER/REPOSITORY/PATH@REF o el formato anterior OWNER/REPOSITORY@SKILL.",
-    "sourceHelp": "No es una entrada Git arbitraria. OpenGUI lee un repositorio público de GitHub mediante su API y nunca invoca npx ni un instalador de shell.",
-    "githubOnlyTitle": "Solo repositorios de GitHub",
-    "githubOnlyDescription": "El Host actual admite exactamente la sintaxis de fuente mostrada arriba. No admite otros hosts Git ni URL arbitrarias.",
-    "trustTitle": "Revisar antes de confiar",
-    "trustDescription": "La fuente y la revisión establecen procedencia, no seguridad. Revisa el repositorio y su SKILL.md antes de instalar.",
+    "sourceHelp": "Usa un repositorio público de GitHub.",
     "manual": "Solo manual",
     "modified": "Modificada localmente",
     "metadata": {
@@ -961,7 +972,7 @@
     },
     "confirm": {
       "installTitle": "¿Instalar {{name}}?",
-      "installDescription": "OpenGUI validará esta fuente y la publicará en el ámbito {{scope}}. No ejecutará ningún instalador de shell.",
+      "installDescription": "Revisa la fuente antes de instalar para {{scope}}.",
       "installAction": "Instalar Skill",
       "updateTitle": "¿Comprobar actualizaciones de {{name}}?",
       "updateDescription": "OpenGUI resolverá de nuevo la fuente guardada y publicará atómicamente su revisión inmutable más reciente en el ámbito {{scope}}.",
@@ -969,22 +980,33 @@
       "removeTitle": "¿Eliminar {{name}}?",
       "removeDescription": "Esto elimina la instalación gestionada del ámbito {{scope}}. Las Sessions existentes conservan su revisión bloqueada.",
       "removeAction": "Eliminar Skill"
-    }
+    },
+    "projectScopeName": "Disponible solo en {{project}}."
   },
   "setupWizard": {
     "connectModelTitle": "Conecta un modelo",
-    "connectModelDescription": "Añade una conexión compatible con OpenAI. Puedes cambiarla más tarde en Ajustes.",
     "baseUrl": "URL base",
     "apiKey": "Clave de API",
     "model": "Modelo",
-    "skip": "Omitir",
-    "readyDescription": "OpenGUI está listo. Conecta un proyecto e inicia una sesión con el agente integrado.",
-    "chooseStartTitle": "Elige dónde empiezan los chats nuevos",
-    "chooseStartDescription": "Los chats nuevos se abren en esta carpeta, salvo que elijas otra.",
+    "skip": "Configurar más tarde",
+    "chooseStartTitle": "Elegir una carpeta de proyecto",
+    "chooseStartDescription": "Los chats nuevos se abren aquí por defecto.",
     "readyTitle": "Todo listo",
-    "folderPlaceholder": "Elige una carpeta o déjalo vacío",
+    "folderPlaceholder": "Pega la ruta de una carpeta",
     "continue": "Continuar",
-    "openOpenGui": "Abrir OpenGUI"
+    "readyWithoutModel": "Conecta un modelo en Ajustes para enviar mensajes.",
+    "folderLabel": "Carpeta de proyecto (opcional)",
+    "chooseProject": "Elegir una carpeta de proyecto",
+    "finishLater": "Terminar por ahora",
+    "projectOpenError": "OpenGUI no pudo abrir esta carpeta. Vuelve atrás y elige una carpeta accesible o inténtalo de nuevo.",
+    "optionalKey": "Clave API (si se requiere)",
+    "finishWithoutModel": "Abrir el espacio de trabajo",
+    "exampleModel": "p. ej., nombre-del-modelo",
+    "otherProviderHelp": "Consulta la guía de tu proveedor para obtener la URL base y el ID del modelo.",
+    "modelSaveError": "No se pudo guardar la conexión. Revisa los datos e inténtalo de nuevo.",
+    "guidedProviderSetup": "Elegir un proveedor",
+    "manualConnection": "Endpoint propio",
+    "connectionOptions": "Opciones de conexión"
   },
   "languages": {
     "af": "Afrikaans",
@@ -1083,11 +1105,12 @@
     "noWorkspaceTitle": "No hay ningún espacio de trabajo configurado",
     "noWorkspaceDescription": "Un espacio de trabajo es tu backend de OpenGUI. Créalo y luego añade proyectos.",
     "addWorkspace": "Añadir espacio de trabajo",
-    "noSharedProjects": "Todavía no se han compartido carpetas de proyecto con tu cuenta. Pide acceso al propietario del Host o a quien pueda invitar."
+    "noSharedProjects": "Todavía no se han compartido carpetas de proyecto con tu cuenta. Pide acceso al propietario del Host o a quien pueda invitar.",
+    "openProject": "Abrir un proyecto",
+    "openProjectTitle": "Aún no hay proyectos"
   },
   "emptySession": {
-    "heading": "¿En qué trabajamos?",
-    "headingInProject": "¿En qué trabajamos en <project>{{project}}</project>?"
+    "heading": "Nuevo chat"
   },
   "questionPanel": {
     "title": "El asistente tiene una pregunta",
@@ -1099,7 +1122,7 @@
     "noLineDiffAvailable": "No hay diff de líneas disponible."
   },
   "reasoning": {
-    "thinking": "Pensando",
+    "thinking": "Razonamiento",
     "thinkingRunning": "Pensando..."
   },
   "toolLabels": {
@@ -1172,7 +1195,10 @@
     "searchFolders": "Buscar carpetas",
     "clearSearch": "Borrar búsqueda de carpetas",
     "noMatchingFolders": "Ninguna carpeta coincide con tu búsqueda",
-    "loadingServerFolders": "Cargando carpetas del servidor..."
+    "unavailableFolder": "Esta carpeta no está disponible.",
+    "loadingServerFolders": "Cargando carpetas del servidor...",
+    "defaultTitle": "Elegir una carpeta de proyecto",
+    "useFolder": "Usar esta carpeta"
   },
   "fileMention": {
     "searching": "Buscando...",
@@ -1189,7 +1215,17 @@
     "steer": "dirigir",
     "edit": "Editar",
     "moveToTop": "Mover arriba del todo",
-    "moveToBottom": "Mover abajo del todo"
+    "moveToBottom": "Mover abajo del todo",
+    "title": "Mensajes en cola ({{count}})",
+    "next": "Siguiente",
+    "waitingForRun": "En espera de la ejecución actual",
+    "paused": "En pausa. Elige «Enviar ahora» para continuar.",
+    "collapse": "Contraer mensajes en cola",
+    "expand": "Mostrar todos los mensajes en cola",
+    "stopAndSend": "Detener la ejecución actual y enviar",
+    "stopAndSendCompact": "Detener y enviar",
+    "expandMessage": "Ver mensaje completo",
+    "collapseMessage": "Contraer mensaje"
   },
   "permissionPanel": {
     "title": "Permiso: {{permission}}",
@@ -1232,12 +1268,12 @@
   "viewLink": {
     "loadingTitle": "Sesión compartida",
     "readOnly": "Conversación de solo lectura",
-    "invalid": "Este enlace no es válido, ha caducado o ha sido revocado.",
+    "invalid": "Este enlace no está disponible. Pide un enlace nuevo a quien te lo envió.",
+    "loadFailed": "No se pudo cargar esta conversación.",
     "empty": "Esta sesión todavía no tiene mensajes.",
     "usedTool": "Usó {{tool}}",
     "user": "Usuario",
-    "assistant": "OpenGUI",
-    "footer": "Compartido desde OpenGUI · Solo lectura"
+    "assistant": "OpenGUI"
   },
   "host": {
     "lowDiskSpace": "Este Host casi no tiene espacio en disco. Es posible que los chats no se guarden hasta que se libere espacio."
@@ -1258,8 +1294,8 @@
     "fileBrowserFailed": "No se pudo abrir el gestor de archivos. Inténtalo de nuevo.",
     "toggle": "Explorar archivos",
     "openLink": "Vista previa de {{name}}",
-    "back": "Atrás",
-    "forward": "Adelante",
+    "back": "Archivo o carpeta anterior",
+    "forward": "Archivo o carpeta siguiente",
     "close": "Cerrar archivos",
     "download": "Descargar",
     "downloadFailed": "No se pudo descargar el archivo",
@@ -1295,6 +1331,18 @@
       "folderFailed": "No se pudo cargar esta carpeta. Revisa tu conexión e inténtalo de nuevo.",
       "fileFailed": "No se pudo cargar este archivo. Revisa tu conexión e inténtalo de nuevo."
     },
-    "lineLimit": "Se muestran las primeras {{count}} líneas. Descarga el archivo completo."
+    "lineLimit": "Se muestran las primeras {{count}} líneas. Descarga el archivo completo.",
+    "linkedLine": "Línea enlazada {{line}}",
+    "projectFiles": "Archivos del proyecto",
+    "backToFiles": "Volver a los archivos",
+    "pdfPages_one": "{{count}} página",
+    "pdfPages_other": "{{count}} páginas",
+    "zoomIn": "Acercar",
+    "zoomOut": "Alejar",
+    "fitWidth": "Ajustar al ancho",
+    "pdfOverflow": "Desplázate hacia los lados para ver la página completa.",
+    "pdfPreview": "Vista previa del PDF",
+    "pdfPageFailed": "No se pudo mostrar la página {{page}}.",
+    "pdfTextUnavailable": "No se puede seleccionar texto en la página {{page}}."
   }
 }
